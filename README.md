@@ -1,4 +1,6 @@
-![feather logo](logo.png)
+<p align="center">
+  <img alt="logo" src="logo.png">
+</p>
 
 # feather
 
