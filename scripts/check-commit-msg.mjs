@@ -73,12 +73,12 @@ if (/(?:^|[^\w-])load[\s_-]*bearing/i.test(text)) {
   fails.push('"load-bearing" terminology is forbidden — pick a different word.');
 }
 
-// dont-repeat-the-diff: the unambiguous narration tokens are hard-fails.
+// dont-repeat-the-diff narration: warn, since these can be legitimate.
 if (/\bthis commit\b/i.test(text)) {
-  fails.push('Drop "this commit ..." — the diff says what; say why.');
+  warns.push('Drop "this commit ..." — the diff says what; say why.');
 }
 if (/\bas requested by\b/i.test(text)) {
-  fails.push('Drop "as requested by" — use a Co-authored-by trailer instead.');
+  warns.push('Drop "as requested by" — use a Co-authored-by trailer instead.');
 }
 
 // Breaking change or revert needs a body.

@@ -75,10 +75,10 @@ Confirm the commit-msg `run` path matches where you put the checker
 These defaults are feather's stance; change them to yours.
 
 - **`scripts/check-commit-msg.mjs`** — the `TYPES` list (allowed commit types),
-  and three hard-fail bans you may not want: the structural-importance phrase
-  ban (the tic `md-load-bearing` also catches), the `this commit` ban, and the
-  `as requested by` ban. Delete a `fails.push(...)` block to drop a ban, or
-  move it to `warns.push(...)` to soften it.
+  and the narration checks. The structural-importance phrase (the tic
+  `md-load-bearing` also catches) is a hard fail; `this commit` and
+  `as requested by` are warnings. Move a check between `fails.push(...)` and
+  `warns.push(...)`, or delete it, to taste.
 - **Caps-theater word lists** — `comment-caps-theater.yml` and
   `md-caps-theater.yml` carry curated word lists. They are deliberately short to
   keep false positives near zero. Add or remove words to taste.
