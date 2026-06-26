@@ -64,6 +64,7 @@ rules/                          5 markdown + 4 comment rules
 scripts/check-commit-msg.mjs    the commit-msg validator
 docs/documentation-standards.md the written spec the rules encode
 docs/adapting.md                adoption checklist (human or agent)
+CLAUDE.md                       map for agents working on feather itself
 ```
 
 ## Adapt it
@@ -75,3 +76,7 @@ hooks, and verify.
 [docs/documentation-standards.md](docs/documentation-standards.md) is the
 human-readable spec the rules enforce — copy it as your team's starting point
 and edit the wording.
+
+## License
+
+MIT — see [LICENSE](LICENSE) and <https://seth.mit-license.org/>.
