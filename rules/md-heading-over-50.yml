@@ -1,0 +1,17 @@
+id: md-heading-over-50
+language: markdown
+severity: hint
+message: >-
+  Heading over 50 characters. A heading is a label, not a sentence — if it needs
+  50+ chars it is carrying explanation that belongs in the body. Shorten it to
+  the topic; move the qualifier into the prose underneath.
+note: >-
+  Measures the heading content (the inline after the `#` marker), so the marker
+  length does not count against the budget. Run `ast-grep scan --rule
+  rules/md-heading-over-50.yml <doc.md>`.
+rule:
+  kind: inline
+  regex: '[^\n]{50,}'
+  inside:
+    kind: atx_heading
+    stopBy: end

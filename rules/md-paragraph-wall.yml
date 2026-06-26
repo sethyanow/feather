@@ -1,0 +1,25 @@
+id: md-paragraph-wall
+language: markdown
+severity: hint
+message: >-
+  Wall — a single prose paragraph of 700+ characters. One block this size braids
+  several ideas together so the reader can't tell decision from evidence from
+  aside, and the actionable sentence drowns. Split it into focused paragraphs
+  (one idea each, blank-line separated), or lift the rationale into a structured
+  section the paragraph links to.
+note: >-
+  Content-length, measured across newlines (`[\s\S]`), so it is wrap-invariant —
+  a wall reads the same whether it ships as one long line or many wrapped ones,
+  and the threshold catches both. Tables and fenced code are exempt by kind. The
+  700 floor sits above the largest clean paragraph in well-formed docs, so good
+  dense prose is not flagged. Run `ast-grep scan --rule
+  rules/md-paragraph-wall.yml <doc.md>`.
+rule:
+  kind: paragraph
+  regex: '[\s\S]{700,}'
+  not:
+    inside:
+      any:
+        - kind: pipe_table
+        - kind: fenced_code_block
+      stopBy: end

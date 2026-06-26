@@ -1,0 +1,8 @@
+# ast-grep project config for feather. The prose-hygiene rules live in rules/
+# and run against built-in languages (markdown + your source language), so no
+# custom grammar or parser binary is needed.
+#
+# Run on demand:  ast-grep scan                          (all rules)
+#                 ast-grep scan --rule rules/<id>.yml     (one rule)
+ruleDirs:
+  - rules

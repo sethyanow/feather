@@ -1,0 +1,35 @@
+# Git hooks, run via lefthook. After editing, run `lefthook install` to wire
+# the dispatchers into .git/hooks.
+#
+# Two tiers, by design:
+#   - Prose rules run in hint mode: ast-grep prints findings on the staged files
+#     but never blocks the commit (hint and warning severities exit 0). This is
+#     the floor for new writing while a backlog is cleaned. To enforce a rule,
+#     add `--error` to the scan once its violations are cleared from the tree.
+#   - The commit-msg validator hard-enforces the convention; a rejected message
+#     is regenerated, not amended.
+#
+# Adapt the `glob` to your source extensions and point the commit-msg `run` at
+# wherever you vend the checker. See docs/adapting.md.
+
+# Show command stdout even when a job passes, so hint output reaches the reader.
+output:
+  - summary
+  - failure
+  - execution_out
+
+pre-commit:
+  jobs:
+    - name: prose-hints
+      glob: "*.{ts,tsx,js,md}"
+      # Skip dot-directories (.github, .vendor, ...) — installed/vendored
+      # content, not your authored prose.
+      exclude:
+        - ".*"
+        - "*/.*"
+      run: ast-grep scan {staged_files}
+
+commit-msg:
+  jobs:
+    - name: commit-style
+      run: node scripts/check-commit-msg.mjs {1}

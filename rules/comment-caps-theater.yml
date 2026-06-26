@@ -1,0 +1,19 @@
+# Scans code comments. Set `language` to your source language (java, python,
+# rust, go, tsx, ...) — see docs/adapting.md.
+id: comment-caps-theater
+language: typescript
+severity: hint
+message: >-
+  Caps-theater in a comment — an all-caps word used for emphasis (MUST, NEVER,
+  NOT, ONLY, SAME, EXACT...). The standard bans this: write plainly and let
+  sentence structure carry the weight. Rewrite the emphasis as prose, or delete
+  it if the surrounding sentence already makes the point.
+note: >-
+  The whitelist is emphasis words only, so acronyms (SDF, GPU, HTTP, ID) and
+  code identifiers never fire — only rhetorical shouting does. This enforces the
+  "no caps theater" rule structurally; run `ast-grep scan --rule
+  rules/comment-caps-theater.yml` to find every offender. A hint, not a hard
+  fail: a curated set means low false positives, but read each before rewriting.
+rule:
+  kind: comment
+  regex: \b(MUST|NEVER|ALWAYS|NOT|ONLY|EXACTLY|EXACT|SAME|BOTH|REAL|EVERY|SINGLE|CANNOT)\b

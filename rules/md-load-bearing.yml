@@ -1,0 +1,15 @@
+id: md-load-bearing
+language: markdown
+severity: warning
+message: >-
+  "load-bearing" terminology in prose — forbidden in any spelling (load-bearing,
+  load bearing, loadbearing). It signals that a thing matters without saying why.
+  Pick a different word and name the actual stake.
+note: >-
+  Matches any separator and case, but exempts the compound rule name
+  (`comment-load-bearing` / `md-load-bearing`, preceded by a hyphen) so doc
+  references to these rules do not self-trip. Run `ast-grep scan --rule
+  rules/md-load-bearing.yml <doc.md>`.
+rule:
+  kind: inline
+  regex: '(?i)(^|[^\w-])load[\s_-]*bearing'

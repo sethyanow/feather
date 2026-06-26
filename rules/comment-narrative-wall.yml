@@ -1,0 +1,25 @@
+# Scans code comments. Set `language` to your source language (java, python,
+# rust, go, tsx, ...) — see docs/adapting.md.
+id: comment-narrative-wall
+language: typescript
+severity: hint
+message: >-
+  Narrative-wall comment — a block comment of 9+ lines. Dense prose doing the
+  job of structure: the reader can't tell decision from evidence from aside, and
+  the key sentence drowns in supporting context. Consider splitting into a short
+  lead ("what + why") plus structured detail, or moving the long rationale to a
+  doc the comment links.
+note: >-
+  Wrap-invariant by design — it catches both forms of the same wall: 9+ wrapped
+  lines, or a single physical line of 300+ chars. A rule that counted only
+  newlines was blind to the unwrapped form: reflowing a monster line into many
+  short ones is what first makes these walls visible, so the metric can't depend
+  on wrapping. A hint, not a fail — a long header with real @param/@returns
+  detail is fine; the signal is prose that braids what/why/evidence/caveats into
+  one block. Run `ast-grep scan --rule rules/comment-narrative-wall.yml`, then
+  judge each against docs/documentation-standards.md.
+rule:
+  kind: comment
+  any:
+    - regex: (\n.*){8,}
+    - regex: '[^\n]{300,}'

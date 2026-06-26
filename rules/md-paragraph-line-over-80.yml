@@ -1,0 +1,25 @@
+id: md-paragraph-line-over-80
+language: markdown
+severity: hint
+message: >-
+  Prose paragraph with a physical line over 80 characters. The standard caps
+  paragraph lines at 80 so docs read cleanly in source, editor, and diff. Wrap
+  the line — but keep paragraphs short and focused (one idea, blank-line
+  separated); do not reflow a run-on into a dense 80-col block, which trades a
+  long line for an unreadable wall.
+note: >-
+  Tables, fenced code, and headings are exempt by construction — they are
+  different node kinds (pipe_table / fenced_code_block / atx_heading), so this
+  rule only fires on real prose (paragraphs, list items, blockquote bodies). One
+  known false positive: a paragraph that runs long only because of an
+  unbreakable URL — eyeball those. Run `ast-grep scan --rule
+  rules/md-paragraph-line-over-80.yml <doc.md>`.
+rule:
+  kind: paragraph
+  regex: '[^\n]{81,}'
+  not:
+    inside:
+      any:
+        - kind: pipe_table
+        - kind: fenced_code_block
+      stopBy: end

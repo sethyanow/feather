@@ -1,0 +1,19 @@
+id: md-caps-theater
+language: markdown
+severity: warning
+message: >-
+  Caps-theater in prose — a bare all-caps word used for emphasis or as a section
+  shout (BLOCKER, MAJOR, NOT, ONLY, DONE...). Write plainly; let structure carry
+  the weight. If it is a real literal, wrap it in backticks (`CONSTANT_NAME`); if
+  it is genuinely a label, make it a heading or bold.
+note: >-
+  Encodes the convention that legitimate all-caps is either a backticked literal
+  or a dotted name. The regex exempts a word preceded by a backtick (`MUST` as a
+  quoted example) and a word followed by a dot (a filename like ARCHITECTURE.md),
+  and the curated case-sensitive word list means lowercase prose and bare
+  acronyms (GPU, SDF) never fire. Warning, not error, so a stray miss does not
+  block a commit. Tune the word list to taste. Run `ast-grep scan --rule
+  rules/md-caps-theater.yml <doc.md>`.
+rule:
+  kind: inline
+  regex: '(^|[^`\w])(MUST|NEVER|ALWAYS|NOT|ONLY|EXACTLY|EXACT|SAME|BOTH|REAL|EVERY|SINGLE|CANNOT|BLOCKER|MAJOR|MINOR|CRITICAL|IMPORTANT|WARNING|TODO|DONE|OPEN)([^.`\w]|$)'
