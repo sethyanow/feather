@@ -1,3 +1,5 @@
+![feather logo](logo.png)
+
 # feather
 
 A light-touch prose-hygiene gate for code comments, docs, and commit messages.
