@@ -95,11 +95,12 @@ mechanical subset and rejects a bad message rather than letting it land.
 
 Hooks run via [`lefthook`](../lefthook.yml):
 
-- **pre-commit** runs the prose rules on staged files in hint mode — it prints
-  findings but does not block, the floor for new writing while a backlog is
-  cleaned.
+- **pre-commit** runs the prose rules on staged files. Most are hints — they
+  print findings but do not block, the floor for new writing while a backlog is
+  cleaned. `md-load-bearing` and `comment-load-bearing` ship at `error`, so they
+  block the commit.
 - **commit-msg** hard-enforces the commit convention.
 
-To enforce a prose rule once its violations are cleared from the tree, add
-`--error` to that rule's scan so a match fails the commit. See
+To promote another prose rule to blocking once its violations are cleared, set
+its `severity` to `error` (or add `--error` to that rule's scan). See
 [adapting.md](adapting.md) for the full adoption checklist.

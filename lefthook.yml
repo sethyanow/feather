@@ -2,12 +2,12 @@
 # the dispatchers into .git/hooks.
 #
 # Two tiers, by design:
-#   - Prose rules run in hint mode: ast-grep prints findings on the staged files
-#     but never blocks the commit (hint and warning severities exit 0). This is
-#     the floor for new writing while a backlog is cleaned. To enforce a rule,
-#     add `--error` to the scan once its violations are cleared from the tree.
-#   - The commit-msg validator hard-enforces the convention; a rejected message
-#     is regenerated, not amended.
+#   - Prose rules run on staged files. Most are hint/warning and exit 0, so they
+#     print findings without blocking — the floor for new writing while a
+#     backlog is cleaned. The *-load-bearing rules ship at `error`, so a match
+#     blocks the commit; promote others the same way once they are clean.
+#   - The commit-msg validator hard-enforces the message convention. It blocks
+#     before the commit lands, so re-run with a corrected message.
 #
 # Adapt the `glob` to your source extensions and point the commit-msg `run` at
 # wherever you vend the checker. See docs/adapting.md.
@@ -20,7 +20,7 @@ output:
 
 pre-commit:
   jobs:
-    - name: prose-hints
+    - name: prose
       glob: "*.{ts,tsx,js,md}"
       # Skip dot-directories (.github, .vendor, ...) — installed/vendored
       # content, not your authored prose.

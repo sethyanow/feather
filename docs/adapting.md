@@ -8,11 +8,11 @@ concrete edit or command. Work top to bottom.
 
 Two enforcement tiers:
 
-1. **Prose rules** (`rules/*.yml`) run on staged files at pre-commit in hint
-   mode. They print findings but never block a commit (ast-grep `hint` and
-   `warning` severities exit 0). This is the floor for new writing while you
-   clean a backlog.
-2. **The commit-msg validator** (`scripts/check-commit-msg.mjs`) is the only
+1. **Prose rules** (`rules/*.yml`) run on staged files at pre-commit. Most are
+   `hint`/`warning` and exit 0, so they print findings without blocking — the
+   floor for new writing while you clean a backlog. The `*-load-bearing` rules
+   ship at `error`, so a match blocks the commit.
+2. **The commit-msg validator** (`scripts/check-commit-msg.mjs`) is the other
    hard gate. It exits 1 on a bad message, blocking the commit.
 
 ## 1. Install the tools
@@ -97,7 +97,7 @@ after any edit to `lefthook.yml`.
 Run the rules over your tree and push a bad message through the checker:
 
 ```sh
-ast-grep scan                                    # all rules, no error exit
+ast-grep scan                                    # all rules; a *-load-bearing match exits 1
 printf 'Added stuff.\n' | (cat > /tmp/m && node scripts/check-commit-msg.mjs /tmp/m); echo "exit $?"
 ```
 
@@ -106,15 +106,16 @@ non-imperative) and exit 1. A well-formed `feat(scope): add the thing` exits 0.
 
 ## 8. Escalate a rule when ready
 
-Every prose rule ships as a hint so it never blocks. Once a rule's violations
-are cleared from your tree, enforce it by adding `--error` to its scan — for
-example a dedicated job that fails the commit:
+The `*-load-bearing` rules ship at `error` and block out of the box. The rest
+ship as hints so they never block. Once a hint rule's violations are cleared
+from your tree, promote it: set its `severity` to `error`, or add `--error` to
+its scan in a dedicated job.
 
 ```yaml
 - name: prose-enforced
   glob: "*.md"
-  run: ast-grep scan --rule rules/md-load-bearing.yml --error {staged_files}
+  run: ast-grep scan --rule rules/md-heading-over-50.yml --error {staged_files}
 ```
 
-Keep the rest in the hint job. Promote rules one at a time as the tree gets
-clean, so the gate tightens without a flag day.
+Promote rules one at a time as the tree gets clean, so the gate tightens without
+a flag day.

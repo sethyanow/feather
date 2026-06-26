@@ -15,10 +15,11 @@ feather itself.
 
 ## The one thing to internalize
 
-Two tiers, and only one blocks. Prose rules run as `hint`/`warning`, which
-ast-grep exits 0 on — `ast-grep scan` never fails on its own. The commit-msg
-validator is the only hard gate (exit 1). Promote a prose rule to blocking with
-`--error` on its scan.
+Severity is the gate. Prose rules are `hint`/`warning`, which ast-grep exits 0
+on — they print but never block. The `*-load-bearing` rules ship at `error`, so
+`ast-grep scan` exits 1 on a match and the commit is blocked. The commit-msg
+validator is the other hard gate. Promote any other prose rule the same way
+once its violations are gone.
 
 ## Working on it
 

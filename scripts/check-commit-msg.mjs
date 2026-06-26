@@ -114,9 +114,9 @@ function pointer() {
   const w = (s) => process.stderr.write(s + "\n");
   w("");
   w("  Core hints: Conventional Commits, why-over-what, dont-repeat-the-diff.");
-  w("  Do not `git commit --amend` — it rewrites the prior commit, and amending");
-  w("  an already-pushed commit forces a push. Re-run `git commit` with a");
-  w("  corrected message; if a bad message already landed, make an honest");
+  w("  Nothing was committed — re-run `git commit` with a corrected message.");
+  w("  If a bad message already landed: amend it if you have not pushed; if you");
+  w("  have pushed, do not amend (that forces a push) — make an honest");
   w("  follow-up commit and push that.");
 }
 

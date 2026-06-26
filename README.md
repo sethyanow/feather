@@ -1,27 +1,24 @@
-<p align="center">
-  <img alt="logo" src="logo.png">
-</p>
-
 # feather
 
 A light-touch prose-hygiene gate for code comments, docs, and commit messages.
 Structural `ast-grep` rules plus a commit-msg validator, wired through
-`lefthook`. The rules nudge in hint mode; the commit gate is the only hard wall.
+`lefthook`. Most rules nudge in hint mode; the `*-load-bearing` rules and the
+commit convention block outright.
 
 The name is the design: feather sits on top of your writing without weighing it
-down. (It also ships `md-load-bearing` and `comment-load-bearing` — rules that
-ban a structural-importance tic, so feather forbids the very word it embodies.)
+down — opinionated only where it counts.
 
 ## The two tiers
 
-- **Prose rules** (`rules/*.yml`) run on staged files at pre-commit in hint
-  mode. They print findings but never block a commit — `hint` and `warning`
-  severities exit 0. This is the floor for new writing while you clean a
-  backlog. Promote a rule to blocking with `--error` once its violations are
-  gone.
-- **The commit-msg validator** (`scripts/check-commit-msg.mjs`) is the only hard
-  gate. Conventional Commits shape, length, no AI attribution, no diff-restating
-  narration. A bad message exits 1 and is regenerated, not amended.
+- **Prose rules** (`rules/*.yml`) run on staged files at pre-commit. Most are
+  `hint`/`warning` — they print findings but exit 0, so they never block, the
+  floor for new writing while you clean a backlog. The `*-load-bearing` rules
+  ship at `error`: a match blocks the commit. Promote any other rule the same
+  way once its violations are gone.
+- **The commit-msg validator** (`scripts/check-commit-msg.mjs`) gates messages.
+  Conventional Commits shape, length, no AI attribution, no diff-restating
+  narration. A bad message exits 1 before the commit lands — just re-run with a
+  corrected one.
 
 ## What the rules catch
 
