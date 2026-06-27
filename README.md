@@ -1,14 +1,40 @@
 # feather
 
-A light-touch prose-hygiene gate for code comments, docs, and commit messages.
-Structural `ast-grep` rules plus a commit-msg validator, wired through
-`lefthook`. Most rules nudge in hint mode; the `*-load-bearing` rules and the
-commit convention block outright.
+Feather provides prose review that constrains and guides agents
+writing a large share of comments, docs, and commits.
 
-The name is the design: feather sits on top of your writing without weighing it
-down — opinionated only where it counts.
+It catches a small set of generated-text habits that repeatedly waste review
+time: padded paragraphs, shouting, stale line citations, vague importance
+claims, diff narration, and AI attribution.
 
-## The two tiers
+I got tired of Claude calling things load bearing so I had it write rules that
+would catch that. That way, agents are forced to say what they mean and not
+lean on the fuzzy semantics of prose.
+
+Feather is a stripped down extraction from my personal tooling. Fork it, hack
+it, share it. Keep your agents from propogating semantic diffussion.
+
+## Install
+
+### Install Script
+
+1. Run the setup script: `curl TBD | sh`
+
+The script checks and asks the user whether they want to install the
+dependencies, which rules and hooks they want, and whether they want to
+run the hooks installation.
+
+### Manual
+
+1. Install `ast-grep`, `lefthook`, and Node 18+.
+2. Run `ast-grep scan` to audit your tree.
+3. Run `lefthook install` to wire pre-commit and commit-msg hooks.
+
+The markdown rules work as-is. For comments, edit the `language` field in
+`rules/comments.yml` to match your source language, then run the install
+sequence again.
+
+## How It Works
 
 - **Prose rules** (`rules/*.yml`) run on staged files at pre-commit. Most are
   `hint`/`warning` — they print findings but exit 0, so they never block, the
