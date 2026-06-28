@@ -18,11 +18,25 @@ it, share it. Keep your agents from propogating semantic diffussion.
 
 ### Install Script
 
-1. Run the setup script: `curl TBD | sh`
+1. Run the setup script:
 
-The script checks and asks the user whether they want to install the
-dependencies, which rules and hooks they want, and whether they want to
-run the hooks installation.
+```sh
+curl -fsSL https://raw.githubusercontent.com/sethyanow/feather/main/install.sh | sh
+```
+
+The script checks for `ast-grep`, `lefthook`, and Node 18+ and prints install
+commands for anything missing (it never installs them for you). It asks which
+rule groups you want (markdown and/or comment; for comment rules it prompts a
+source language, default `typescript`), which hooks (pre-commit and/or
+commit-msg), and whether to run `lefthook install`.
+
+If you already have an `sgconfig.yml` or `lefthook.yml`, the script backs them
+up to `<file>.feather.bak.<timestamp>` and then merges, replaces, or skips per
+your choice. The `lefthook.yml` merge needs `yq`; without it the script writes
+`lefthook.feather.yml` beside your file and tells you how to finish the merge.
+
+All of the above is non-interactive: set the matching `FEATHER_*` env var
+instead of answering the prompt. See the script header for the full list.
 
 ### Manual
 

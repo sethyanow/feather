@@ -4,6 +4,12 @@ A checklist for wiring feather's prose-hygiene rules and commit-msg gate into a
 project. Written to be followed by a person or by an agent — each step is a
 concrete edit or command. Work top to bottom.
 
+The install script (`install.sh`, see the README) automates steps 1-6 below:
+tool checks, rule/hook selection, language rewrite, config backup, and
+`lefthook install`. The `lefthook.yml` merge step needs `yq`; without it the
+script writes `lefthook.feather.yml` beside your file. The rest of this doc is
+the manual path and the tuning knobs.
+
 ## What you are installing
 
 Two enforcement tiers:
