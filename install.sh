@@ -114,6 +114,11 @@ want_commitmsg() { has "$FEATHER_HOOKS" commit-msg; }
 # --- rule fetching --------------------------------------------------------
 
 install_rules() {
+	# Nothing to do — and no empty rules/ to leave behind — if the user opted
+	# out of every rule group. Mirrors install_sgconfig's no-op.
+	if ! want_md && ! want_comment; then
+		return 0
+	fi
 	mkdir -p rules
 	if want_md; then
 		for f in $MD_RULES; do

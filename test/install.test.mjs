@@ -663,6 +663,20 @@ describe("slice 1: markdown-only selection", () => {
     assert.match(sg, /ruleDirs:/);
     assert.match(sg, /- rules/);
   });
+
+  it("creates no rules/ directory when no rules are selected", () => {
+    const res = runInstall({
+      env: {
+        FEATHER_RULES: "",
+        FEATHER_HOOKS: "pre-commit",
+      },
+    });
+    assert.equal(res.status, 0, `install.sh failed:\n${res.stderr}`);
+    assert.ok(
+      !existsSync(join(res.dir, "rules")),
+      "no rules/ dir should be created when the user opts out of all rules",
+    );
+  });
 });
 
 describe("FEATHER_LANG injection guard", () => {
