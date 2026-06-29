@@ -17,12 +17,10 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 
-// Node 18 (the project's documented minimum) lacks import.meta.dirname
-// (added in 20.11). Derive REPO_ROOT from import.meta.url instead so the
-// harness loads on every supported runtime.
-export const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+// import.meta.dirname (added in 20.11) is always available on the project's
+// Node 22+ floor, so derive REPO_ROOT directly from it.
+export const REPO_ROOT = join(import.meta.dirname, "..");
 export const INSTALL_SH = join(REPO_ROOT, "install.sh");
 
 // The set of rule files install.sh knows about.
@@ -105,9 +103,13 @@ export function runInstall({
   if (effectiveStubs.lefthook) {
     writeFileSync(
       join(stubDir, "lefthook"),
+      // An `if` (not `&&`) so a non-install invocation like `lefthook --version`
+      // exits 0 — real lefthook does. A trailing `[ ... ] && touch` would leave
+      // the stub exiting 1 on --version, making tool_major read lefthook as
+      // missing.
       `#!/bin/sh
 ${effectiveStubs.lefthook}
-[ "$1" = "install" ] && touch "${lefthookMarker}"
+if [ "$1" = "install" ]; then touch "${lefthookMarker}"; fi
 `,
     );
     chmodSync(join(stubDir, "lefthook"), 0o755);

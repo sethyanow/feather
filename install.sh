@@ -25,9 +25,11 @@ set -eu
 FEATHER_REF="${FEATHER_REF:-main}"
 FEATHER_BASE_URL="${FEATHER_BASE_URL:-https://raw.githubusercontent.com/sethyanow/feather/${FEATHER_REF}}"
 FEATHER_YES="${FEATHER_YES:-0}"
-FEATHER_RULES="${FEATHER_RULES-markdown,comment}"
-FEATHER_HOOKS="${FEATHER_HOOKS-pre-commit,commit-msg}"
-FEATHER_LANG="${FEATHER_LANG:-typescript}"
+# FEATHER_RULES / FEATHER_HOOKS / FEATHER_LANG are resolved later (see the
+# "selection" block): an env var set here is an override; otherwise they are
+# prompted at the tty, or take their defaults under FEATHER_YES=1. They are
+# left unset on purpose so the resolver can tell "unset" from "set to empty"
+# (an empty FEATHER_HOOKS is a deliberate "no hooks", not a request to prompt).
 FEATHER_RUN_INSTALL="${FEATHER_RUN_INSTALL:-}"
 FEATHER_SGCONFIG="${FEATHER_SGCONFIG:-merge}"
 FEATHER_LEFTHOOK="${FEATHER_LEFTHOOK:-merge}"
@@ -48,18 +50,6 @@ die() {
 	exit 1
 }
 
-# FEATHER_LANG is interpolated into a sed program in install_rules. POSIX
-# shells don't re-evaluate expanded values, so backticks/$(...) are inert,
-# but the value still becomes part of the sed program: a `/` breaks the s///
-# and on GNU sed (Linux default) `x/;e <cmd>` injects sed's `e` command,
-# enabling RCE. ast-grep language names are plain identifiers, so reject
-# anything that isn't.
-case "$FEATHER_LANG" in
-*[!A-Za-z0-9_-]* | "")
-	die "invalid FEATHER_LANG '${FEATHER_LANG}': use only letters, digits, '_' or '-'"
-	;;
-esac
-
 # Fetch a single path from FEATHER_SRC (cp) or FEATHER_BASE_URL (curl).
 # $1 = repo-relative path, $2 = destination path.
 fetch() {
@@ -76,6 +66,20 @@ fetch() {
 # so "markdown, comment" matches "comment" the same as "markdown,comment".
 has() {
 	echo ",$1," | tr -d ' \t' | grep -q ",$2,"
+}
+
+# Ask a yes/no question at the tty. $1 = label, $2 = default (Y or N). Returns
+# 0 for yes, 1 for no; an empty answer takes the default. `if`-guarded at the
+# call site so a "no" never trips `set -e`.
+ask_yn() {
+	if [ "$2" = Y ]; then _hint="[Y/n]"; else _hint="[y/N]"; fi
+	printf '%s %s ' "$1" "$_hint" >/dev/tty
+	read -r _ans </dev/tty 2>/dev/null || _ans=""
+	[ -n "$_ans" ] || _ans="$2"
+	case "$_ans" in
+	y | Y | yes | YES) return 0 ;;
+	*) return 1 ;;
+	esac
 }
 
 # --- selection ------------------------------------------------------------
@@ -324,7 +328,11 @@ merge_lefthook() {
 		# on every exit path below, including die().
 		tmp="./.feather-lh.$$.yml"
 		printf '%s\n' "$1" >"$tmp"
-		yq eval-all 'select(fi==0) *+ select(fi==1)' lefthook.yml "$tmp" >lefthook.yml.merged
+		# Deep-merge (`*+` appends arrays so existing jobs survive), then
+		# collapse every jobs array by name so a re-run doesn't stack a second
+		# copy of feather's jobs. The recurse-and-select form only touches nodes
+		# that already have a `jobs` key, so it invents no empty hook sections.
+		yq eval-all '(select(fi==0) *+ select(fi==1)) | (.. | select(has("jobs")).jobs) |= unique_by(.name)' lefthook.yml "$tmp" >lefthook.yml.merged
 		mv lefthook.yml.merged lefthook.yml
 		rm -f "$tmp"
 		log "deep-merged feather jobs into lefthook.yml via yq"
@@ -337,7 +345,7 @@ merge_lefthook() {
 
 # --- dependency detection (instruct-only; never auto-installs) ------------
 #
-# Detect ast-grep, lefthook, and node (major >= 18). For each missing/old
+# Detect ast-grep, lefthook, and node (major >= 22). For each missing/old
 # tool, print the exact install command. Then ask whether to continue — the
 # installer never installs anything itself.
 
@@ -353,12 +361,20 @@ tool_major() {
 
 check_deps() {
 	missing=""
-	[ "$(tool_major ast-grep 2>/dev/null || echo "")" ] || missing="${missing} ast-grep"
-	[ "$(tool_major lefthook 2>/dev/null || echo "")" ] || missing="${missing} lefthook"
-
-	node_major="$(tool_major node 2>/dev/null || echo "")"
-	if [ -z "$node_major" ] || [ "$node_major" -lt 18 ]; then
-		missing="${missing} node"
+	# Gate each tool on what was selected: ast-grep runs the rules and the
+	# pre-commit scan; lefthook wires either hook; node runs the commit-msg
+	# checker. Don't demand a tool the chosen install never uses.
+	if want_md || want_comment || want_precommit; then
+		[ "$(tool_major ast-grep 2>/dev/null || echo "")" ] || missing="${missing} ast-grep"
+	fi
+	if want_precommit || want_commitmsg; then
+		[ "$(tool_major lefthook 2>/dev/null || echo "")" ] || missing="${missing} lefthook"
+	fi
+	if want_commitmsg; then
+		node_major="$(tool_major node 2>/dev/null || echo "")"
+		if [ -z "$node_major" ] || [ "$node_major" -lt 22 ]; then
+			missing="${missing} node"
+		fi
 	fi
 
 	if [ -z "$missing" ]; then
@@ -375,7 +391,7 @@ check_deps() {
 			log "  - lefthook:  brew install lefthook   |   npm i -g lefthook"
 			;;
 		node)
-			log "  - node 18+:  use nvm/brew install node, or see https://nodejs.org/"
+			log "  - node 22+:  use nvm/brew install node, or see https://nodejs.org/"
 			;;
 		esac
 	done
@@ -402,6 +418,60 @@ check_deps() {
 	*) die "aborting; install the dependencies above and re-run" ;;
 	esac
 }
+
+# --- selection: resolve rule groups, hooks, and comment language ----------
+#
+# Precedence per value: an env var set (even to empty) wins as an override;
+# else the default under FEATHER_YES=1; else a per-group y/N prompt at the tty;
+# else the default. A list that resolves to "" means "none" — has() then
+# matches nothing. Runs before check_deps so the want_* gates see the choice.
+
+if [ -n "${FEATHER_RULES+x}" ]; then
+	: # override: use the env value verbatim
+elif [ "$FEATHER_YES" = 1 ] || [ ! -r /dev/tty ]; then
+	FEATHER_RULES="markdown,comment"
+else
+	_rules=""
+	if ask_yn "Install markdown prose rules?" Y; then _rules="markdown"; fi
+	if ask_yn "Install comment prose rules?" Y; then _rules="${_rules:+$_rules,}comment"; fi
+	FEATHER_RULES="$_rules"
+fi
+
+if [ -n "${FEATHER_HOOKS+x}" ]; then
+	: # override
+elif [ "$FEATHER_YES" = 1 ] || [ ! -r /dev/tty ]; then
+	FEATHER_HOOKS="pre-commit,commit-msg"
+else
+	_hooks=""
+	if ask_yn "Install the pre-commit prose hook?" Y; then _hooks="pre-commit"; fi
+	if ask_yn "Install the commit-msg validator hook?" Y; then _hooks="${_hooks:+$_hooks,}commit-msg"; fi
+	FEATHER_HOOKS="$_hooks"
+fi
+
+# Comment language only matters when comment rules are selected.
+if want_comment; then
+	if [ -n "${FEATHER_LANG+x}" ]; then
+		: # override
+	elif [ "$FEATHER_YES" = 1 ] || [ ! -r /dev/tty ]; then
+		FEATHER_LANG="typescript"
+	else
+		printf 'Comment source language? [typescript] ' >/dev/tty
+		read -r _lang </dev/tty 2>/dev/null || _lang=""
+		[ -n "$_lang" ] || _lang="typescript"
+		FEATHER_LANG="$_lang"
+	fi
+	# FEATHER_LANG is interpolated into a sed program in install_rules. POSIX
+	# shells don't re-evaluate expanded values, so backticks/$(...) are inert,
+	# but the value still becomes part of the sed program: a `/` breaks the
+	# s/// and on GNU sed (Linux default) `x/;e <cmd>` injects sed's `e`
+	# command, enabling RCE. ast-grep language names are plain identifiers, so
+	# reject anything that isn't — this guards both override and prompt inputs.
+	case "$FEATHER_LANG" in
+	*[!A-Za-z0-9_-]* | "")
+		die "invalid FEATHER_LANG '${FEATHER_LANG}': use only letters, digits, '_' or '-'"
+		;;
+	esac
+fi
 
 check_deps
 install_rules

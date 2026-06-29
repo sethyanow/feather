@@ -12,7 +12,7 @@ would catch that. That way, agents are forced to say what they mean and not
 lean on the fuzzy semantics of prose.
 
 Feather is a stripped down extraction from my personal tooling. Fork it, hack
-it, share it. Keep your agents from propogating semantic diffussion.
+it, share it. Keep your agents from propogating semantic diffusion.
 
 ## Install
 
@@ -24,23 +24,23 @@ it, share it. Keep your agents from propogating semantic diffussion.
 curl -fsSL https://raw.githubusercontent.com/sethyanow/feather/main/install.sh | sh
 ```
 
-The script checks for `ast-grep`, `lefthook`, and Node 18+ and prints install
-commands for anything missing (it never installs them for you). It asks which
-rule groups you want (markdown and/or comment; for comment rules it prompts a
-source language, default `typescript`), which hooks (pre-commit and/or
-commit-msg), and whether to run `lefthook install`.
+The script checks for `ast-grep`, `lefthook`, and Node 22+ and prints the
+install command for anything missing. It installs nothing itself. Then it asks
+what you want: markdown or comment rules (or both), the comment source language
+(default `typescript`), pre-commit or commit-msg hooks (or both), and whether to
+run `lefthook install`.
 
-If you already have an `sgconfig.yml` or `lefthook.yml`, the script backs them
-up to `<file>.feather.bak.<timestamp>` and then merges, replaces, or skips per
-your choice. The `lefthook.yml` merge needs `yq`; without it the script writes
-`lefthook.feather.yml` beside your file and tells you how to finish the merge.
+An existing `sgconfig.yml` or `lefthook.yml` gets backed up to
+`<file>.feather.bak.<timestamp>`, then merged, replaced, or skipped per your
+choice. The `lefthook.yml` merge needs `yq`. Without it the script drops
+`lefthook.feather.yml` next to your file and tells you how to finish by hand.
 
-All of the above is non-interactive: set the matching `FEATHER_*` env var
-instead of answering the prompt. See the script header for the full list.
+Every prompt takes a `FEATHER_*` override, and `FEATHER_YES=1` accepts the
+defaults. Full list in the script header.
 
 ### Manual
 
-1. Install `ast-grep`, `lefthook`, and Node 18+.
+1. Install `ast-grep`, `lefthook`, and Node 22+.
 2. Run `ast-grep scan` to audit your tree.
 3. Run `lefthook install` to wire pre-commit and commit-msg hooks.
 
@@ -83,7 +83,7 @@ Three binaries, none an npm dependency of your project:
 
 - [ast-grep](https://ast-grep.github.io)
 - [lefthook](https://lefthook.dev)
-- Node 18+ (the checker is pure `node:fs`)
+- Node 22+ (the checker is pure `node:fs`)
 
 Then, from your repo root:
 

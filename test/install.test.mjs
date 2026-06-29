@@ -122,6 +122,20 @@ describe("slice 3: hook selection", () => {
     assert.equal(res.status, 0, `install.sh failed:\n${res.stderr}`);
     assert.ok(!existsSync(join(res.dir, "lefthook.yml")));
   });
+
+  it("defaults to both hooks when FEATHER_HOOKS is unset (FEATHER_YES)", () => {
+    // The complement of the test above: an *unset* FEATHER_HOOKS must take the
+    // default (both hooks), while a *set-but-empty* one means "none". The
+    // resolver must tell those apart (${VAR+x}, not emptiness), or one of this
+    // pair goes red.
+    const res = runInstall({
+      env: { FEATHER_RULES: "markdown" }, // FEATHER_HOOKS intentionally unset
+    });
+    assert.equal(res.status, 0, `install.sh failed:\n${res.stderr}`);
+    const lh = readFileSync(join(res.dir, "lefthook.yml"), "utf8");
+    assert.match(lh, /pre-commit:/);
+    assert.match(lh, /commit-msg:/);
+  });
 });
 
 describe("slice 9: optional lefthook install", () => {
@@ -393,21 +407,71 @@ describe("slice 5: instruct-only dependency detection", () => {
     assert.ok(!res.lefthookCalled);
   });
 
-  it("aborts on old node (<18) with an install hint", () => {
+  it("aborts on old node (<22) under commit-msg with a node 22+ hint", () => {
     const res = runInstall({
-      stubs: { ...DEFAULT_STUBS, node: 'echo "v17.0.0"' },
+      stubs: { ...DEFAULT_STUBS, node: 'echo "v20.0.0"' },
       env: {
         FEATHER_RULES: "markdown",
-        FEATHER_HOOKS: "",
+        // node is only required by the commit-msg checker, so the hook must be
+        // selected for the version floor to be enforced.
+        FEATHER_HOOKS: "commit-msg",
         FEATHER_DEPS_CONTINUE: "0",
       },
     });
     assert.notEqual(res.status, 0);
     const out = res.stdout + res.stderr;
     // The hint emitted by install.sh is the literal:
-    //   "node 18+:  use nvm/brew install node, or see https://nodejs.org/"
-    assert.match(out, /node 18\+/);
+    //   "node 22+:  use nvm/brew install node, or see https://nodejs.org/"
+    assert.match(out, /node 22\+/);
     assert.match(out, /nvm|nodejs\.org|brew/i);
+  });
+
+  it("does not require lefthook or node when no hooks are selected", () => {
+    // Only markdown rules, no hooks: ast-grep is needed to scan, but lefthook
+    // and node are not. Missing them must not abort (DEPS_CONTINUE=0 would
+    // surface any spurious requirement as a non-zero exit).
+    const res = runInstall({
+      stubs: { ...DEFAULT_STUBS, lefthook: "exit 127", node: "exit 127" },
+      env: {
+        FEATHER_RULES: "markdown",
+        FEATHER_HOOKS: "",
+        FEATHER_DEPS_CONTINUE: "0",
+      },
+    });
+    assert.equal(
+      res.status,
+      0,
+      `markdown-only/no-hooks must not require lefthook or node:\n${res.stderr}`,
+    );
+  });
+
+  it("requires lefthook when the pre-commit hook is selected", () => {
+    const res = runInstall({
+      stubs: { ...DEFAULT_STUBS, lefthook: "exit 127" },
+      env: {
+        FEATHER_RULES: "markdown",
+        FEATHER_HOOKS: "pre-commit",
+        FEATHER_DEPS_CONTINUE: "0",
+      },
+    });
+    assert.notEqual(res.status, 0, "the pre-commit hook needs lefthook");
+    assert.match(res.stdout + res.stderr, /lefthook/);
+  });
+
+  it("does not require node for the pre-commit hook (node is commit-msg only)", () => {
+    const res = runInstall({
+      stubs: { ...DEFAULT_STUBS, node: "exit 127" },
+      env: {
+        FEATHER_RULES: "markdown",
+        FEATHER_HOOKS: "pre-commit",
+        FEATHER_DEPS_CONTINUE: "0",
+      },
+    });
+    assert.equal(
+      res.status,
+      0,
+      `pre-commit alone must not require node:\n${res.stderr}`,
+    );
   });
 
   it("continues past missing deps when FEATHER_DEPS_CONTINUE=1 and never auto-installs", () => {
@@ -739,6 +803,72 @@ describe("F8: yq merge preserves existing jobs (array append)", () => {
       names.sort(),
       ["lint", "prose"],
       `expected both lint and prose in pre-commit.jobs; got ${JSON.stringify(names)}`,
+    );
+  });
+
+  it("is idempotent: re-merging does not duplicate jobs and adds no phantom hook", () => {
+    if (!hasYq) {
+      assert.ok(true, "yq not installed on this machine; skipping real-yq test");
+      return;
+    }
+    // A lefthook.yml that already went through a feather merge: it carries the
+    // user's lint job AND a feather prose job. Merging feather in again must
+    // collapse the duplicate prose rather than append a second one.
+    const preMerged =
+      "# my project hooks\n" +
+      "pre-commit:\n" +
+      "  jobs:\n" +
+      "    - name: lint\n" +
+      "      run: eslint .\n" +
+      "    - name: prose\n" +
+      '      glob: "*.{ts,tsx,js,md}"\n' +
+      "      run: ast-grep scan {staged_files}\n";
+    const res = runInstall({
+      realYq: true,
+      env: {
+        FEATHER_RULES: "markdown",
+        FEATHER_HOOKS: "pre-commit",
+        FEATHER_LEFTHOOK: "merge",
+      },
+      seedFiles: { "lefthook.yml": preMerged },
+    });
+    assert.equal(res.status, 0, `install.sh failed:\n${res.stderr}`);
+
+    const merged = readFileSync(join(res.dir, "lefthook.yml"), "utf8");
+
+    // Exactly one lint and one prose — no duplicate.
+    const parsed = spawnSync("yq", ["-o=json", ".pre-commit.jobs.[].name"], {
+      input: merged,
+      encoding: "utf8",
+    });
+    assert.equal(parsed.status, 0, `yq parse failed:\n${parsed.stderr}`);
+    const names = parsed.stdout
+      .trim()
+      .split("\n")
+      .map((s) => s.trim().replace(/^"(.*)"$/, "$1"))
+      .filter(Boolean);
+    assert.deepEqual(
+      names.sort(),
+      ["lint", "prose"],
+      `re-merge must not duplicate jobs; got ${JSON.stringify(names)}`,
+    );
+
+    // Pollution guard: only pre-commit was involved, so the merge must not
+    // invent a commit-msg section. The naive `(.commit-msg.jobs //= []) | ...`
+    // dedup form would materialize an empty `commit-msg:` key here.
+    const hasCommitMsg = spawnSync("yq", ["-o=json", 'has("commit-msg")'], {
+      input: merged,
+      encoding: "utf8",
+    });
+    assert.equal(
+      hasCommitMsg.status,
+      0,
+      `yq parse failed:\n${hasCommitMsg.stderr}`,
+    );
+    assert.equal(
+      hasCommitMsg.stdout.trim(),
+      "false",
+      "merge must not invent a commit-msg section when only pre-commit was involved",
     );
   });
 });

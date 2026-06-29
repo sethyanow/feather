@@ -27,7 +27,7 @@ Three binaries, none of them an npm dependency of your project:
 
 - [ast-grep](https://ast-grep.github.io) — runs the rules.
 - [lefthook](https://lefthook.dev) — wires the git hooks.
-- Node 18+ — runs the commit-msg checker (pure `node:fs`, no packages).
+- Node 22+ — runs the commit-msg checker (pure `node:fs`, no packages).
 
 ```sh
 ast-grep --version
