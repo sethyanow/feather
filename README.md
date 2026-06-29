@@ -12,7 +12,7 @@ would catch that. That way, agents are forced to say what they mean and not
 lean on the fuzzy semantics of prose.
 
 Feather is a stripped down extraction from my personal tooling. Fork it, hack
-it, share it. Keep your agents from propogating semantic diffusion.
+it, share it. Keep your agents from propagating semantic diffusion.
 
 ## Install
 
