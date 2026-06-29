@@ -70,11 +70,22 @@ export const DEFAULT_STUBS = {
   yq: 'echo "v4.44.0"',
 };
 
-// Is a real yq available on this machine? Tests that need to exercise yq's
-// actual array-merge semantics gate on this.
+// True only for mikefarah yq v4+ — the implementation whose `eval-all` dialect
+// install.sh's merge depends on. python-yq (a jq wrapper) and mikefarah v3
+// speak different dialects and would fail that merge, so they must not gate the
+// real-yq tests in. Pure string parser so it's unit-testable.
+export function isMikefarahYqV4(versionOutput) {
+  if (!versionOutput || !/mikefarah/i.test(versionOutput)) return false;
+  const m = versionOutput.match(/version\s+v?(\d+)\./i);
+  return m ? Number(m[1]) >= 4 : false;
+}
+
+// Is a usable (mikefarah v4+) yq available on this machine? Tests that exercise
+// yq's actual array-merge semantics gate on this.
 export const hasYq = (() => {
   try {
-    return spawnSync("command", ["-v", "yq"], { shell: "/bin/sh", encoding: "utf8" }).status === 0;
+    const res = spawnSync("yq", ["--version"], { encoding: "utf8" });
+    return res.status === 0 && isMikefarahYqV4(`${res.stdout}${res.stderr ?? ""}`);
   } catch {
     return false;
   }

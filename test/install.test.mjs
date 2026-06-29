@@ -13,12 +13,36 @@ import {
   DEFAULT_STUBS,
   MD_RULES,
   hasYq,
+  isMikefarahYqV4,
   readdir,
   runInstall,
 } from "./helpers.mjs";
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+describe("isMikefarahYqV4: gates real-yq tests on the supported CLI", () => {
+  // hasYq must not trust just any `yq`: python-yq (a jq wrapper) and mikefarah
+  // v3 speak a different dialect and would fail the eval-all our tests exercise.
+  it("accepts mikefarah yq v4", () => {
+    assert.equal(
+      isMikefarahYqV4("yq (https://github.com/mikefarah/yq/) version v4.53.3"),
+      true,
+    );
+  });
+  it("rejects python-yq", () => {
+    assert.equal(isMikefarahYqV4("yq 3.4.3"), false);
+  });
+  it("rejects mikefarah yq v3", () => {
+    assert.equal(
+      isMikefarahYqV4("yq (https://github.com/mikefarah/yq/) version 3.4.1"),
+      false,
+    );
+  });
+  it("rejects empty/missing version output", () => {
+    assert.equal(isMikefarahYqV4(""), false);
+  });
+});
 
 describe("install harness", () => {
   it("can spawn install.sh", () => {
