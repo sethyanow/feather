@@ -357,6 +357,37 @@ echo "yq 3.4.3"`;
       "partial lefthook.yml.merged must be cleaned up",
     );
   });
+
+  it("does not run lefthook install or claim success after a sidecar fallback", () => {
+    const yqStub = `#!/bin/sh
+if [ "$1" = "eval-all" ] || [ "$1" = "eval" ]; then exit 1; fi
+echo "yq 3.4.3"`;
+    const res = runInstall({
+      stubs: { ...DEFAULT_STUBS, yq: yqStub },
+      env: {
+        FEATHER_RULES: "markdown",
+        FEATHER_HOOKS: "pre-commit",
+        FEATHER_LEFTHOOK: "merge",
+        FEATHER_RUN_INSTALL: "1",
+      },
+      seedFiles: { "lefthook.yml": oldLh },
+    });
+    assert.equal(res.status, 0, `install.sh failed:\n${res.stderr}`);
+    assert.ok(
+      !res.lefthookCalled,
+      "lefthook install must not run while lefthook.yml is unmerged",
+    );
+    assert.doesNotMatch(
+      res.stdout + res.stderr,
+      /hooks installed/,
+      "must not claim hooks installed after a sidecar fallback",
+    );
+    assert.match(
+      res.stdout + res.stderr,
+      /not wired|merge.*lefthook\.feather\.yml|lefthook\.feather\.yml.*merge/i,
+      "should tell the user hooks are not wired until they merge the sidecar",
+    );
+  });
 });
 
 describe("slice 7: sgconfig replace / skip / merge", () => {

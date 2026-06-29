@@ -390,6 +390,9 @@ merge_lefthook() {
 		warn "yq is present but could not merge lefthook.yml (incompatible variant?)."
 	fi
 	printf '%s\n' "$1" >lefthook.feather.yml
+	# Signal the orchestration: lefthook.yml is unmerged, so don't run
+	# `lefthook install` or claim success — feather's jobs aren't wired yet.
+	lefthook_sidecar=1
 	warn "wrote lefthook.feather.yml beside your existing lefthook.yml."
 	warn "Install mikefarah yq (brew install yq) and re-run, or merge the jobs by hand."
 }
@@ -549,11 +552,20 @@ esac
 check_deps
 install_rules
 install_sgconfig
+# Set to 1 by merge_lefthook when it falls back to the sidecar (yq missing or
+# unable to merge), meaning lefthook.yml was left unmerged.
+lefthook_sidecar=0
 install_lefthook
 
 # --- optional lefthook install + next steps -------------------------------
 
-if want_precommit || want_commitmsg; then
+if [ "$lefthook_sidecar" = "1" ]; then
+	# Merge fell back to the sidecar: lefthook.yml is unchanged, so running
+	# `lefthook install` now would wire the old config and falsely report
+	# success. Tell the user to finish the merge first.
+	warn "feather's hooks are NOT wired: lefthook.yml was left unmerged."
+	warn "Merge lefthook.feather.yml into lefthook.yml, then run: lefthook install"
+elif want_precommit || want_commitmsg; then
 	# Decide whether to run `lefthook install`.
 	#   FEATHER_RUN_INSTALL=1 -> run; =0 -> skip.
 	#   unset + FEATHER_YES=1 -> skip silently (the installer was told not
