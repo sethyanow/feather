@@ -6,11 +6,13 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import {
   COMMITTED_LEFTHOOK,
   COMMENT_RULES,
   DEFAULT_STUBS,
   MD_RULES,
+  hasYq,
   readdir,
   runInstall,
 } from "./helpers.mjs";
@@ -401,7 +403,11 @@ describe("slice 5: instruct-only dependency detection", () => {
       },
     });
     assert.notEqual(res.status, 0);
-    assert.match(res.stdout + res.stderr, /node/i);
+    const out = res.stdout + res.stderr;
+    // The hint emitted by install.sh is the literal:
+    //   "node 18+:  use nvm/brew install node, or see https://nodejs.org/"
+    assert.match(out, /node 18\+/);
+    assert.match(out, /nvm|nodejs\.org|brew/i);
   });
 
   it("continues past missing deps when FEATHER_DEPS_CONTINUE=1 and never auto-installs", () => {
@@ -514,5 +520,225 @@ describe("FEATHER_LANG injection guard", () => {
     });
     assert.notEqual(res.status, 0);
     assert.match(res.stdout + res.stderr, /FEATHER_LANG/i);
+  });
+});
+
+describe("F5: has() tolerates spaces in comma lists", () => {
+  // Regression: has() did exact comma matching with no whitespace
+  // normalization, so "markdown, comment" failed to match "comment".
+  it("selects both groups when FEATHER_RULES has spaces after commas", () => {
+    const res = runInstall({
+      env: {
+        FEATHER_RULES: "markdown, comment",
+        FEATHER_HOOKS: "",
+      },
+    });
+    assert.equal(res.status, 0, `install.sh failed:\n${res.stderr}`);
+    for (const f of MD_RULES) {
+      assert.ok(
+        existsSync(join(res.dir, "rules", f)),
+        `markdown rule ${f} should be copied when listed with spaces`,
+      );
+    }
+    for (const f of COMMENT_RULES) {
+      assert.ok(
+        existsSync(join(res.dir, "rules", f)),
+        `comment rule ${f} should be copied when listed with spaces`,
+      );
+    }
+  });
+
+  it("selects both hooks when FEATHER_HOOKS has spaces after commas", () => {
+    const res = runInstall({
+      env: {
+        FEATHER_RULES: "markdown",
+        FEATHER_HOOKS: "pre-commit, commit-msg",
+      },
+    });
+    assert.equal(res.status, 0, `install.sh failed:\n${res.stderr}`);
+    const lh = readFileSync(join(res.dir, "lefthook.yml"), "utf8");
+    assert.match(lh, /pre-commit:/);
+    assert.match(lh, /commit-msg:/);
+  });
+});
+
+describe("F6: commit-msg checker respects skip policy", () => {
+  // Regression: the checker fetch lived inside lefthook.yml assembly, so it
+  // ran even when an existing lefthook.yml was present with
+  // FEATHER_LEFTHOOK=skip — silently overwriting a repo-local checker. The
+  // fetch must follow the same skip decision as the rest of the hook content.
+  it("does not fetch/overwrite scripts/check-commit-msg.mjs when FEATHER_LEFTHOOK=skip", () => {
+    const existingChecker =
+      "#!/usr/bin/env node\n// my project's own checker — do not touch\nconsole.log('mine');\n";
+    const oldLh = "commit-msg:\n  jobs: []\n";
+    const res = runInstall({
+      env: {
+        FEATHER_RULES: "markdown",
+        FEATHER_HOOKS: "commit-msg",
+        FEATHER_LEFTHOOK: "skip",
+      },
+      seedFiles: {
+        "lefthook.yml": oldLh,
+        "scripts/check-commit-msg.mjs": existingChecker,
+      },
+    });
+    assert.equal(res.status, 0, `install.sh failed:\n${res.stderr}`);
+
+    // Existing lefthook.yml left untouched.
+    const lh = readFileSync(join(res.dir, "lefthook.yml"), "utf8");
+    assert.equal(lh, oldLh, "lefthook.yml must be untouched on skip");
+
+    // Existing checker must be byte-identical.
+    const checker = readFileSync(
+      join(res.dir, "scripts", "check-commit-msg.mjs"),
+      "utf8",
+    );
+    assert.equal(
+      checker,
+      existingChecker,
+      "repo-local checker must not be overwritten on skip",
+    );
+  });
+});
+
+describe("F4: sgconfig merge handles inline ruleDirs: [..]", () => {
+  // Regression: merge_sgconfig's awk path fired on any line starting with
+  // `ruleDirs:`, including the inline form `ruleDirs: [team-rules]`. It then
+  // appended a stray `  - rules` line, producing invalid YAML. The fix must
+  // detect the inline-list form and inject `rules` into the brackets instead.
+  it("injects rules into an inline ruleDirs: [team-rules] list", () => {
+    const oldSg = "ruleDirs: [team-rules]\n";
+    const res = runInstall({
+      env: {
+        FEATHER_RULES: "markdown",
+        FEATHER_HOOKS: "",
+        FEATHER_SGCONFIG: "merge",
+      },
+      seedFiles: { "sgconfig.yml": oldSg },
+    });
+    assert.equal(res.status, 0, `install.sh failed:\n${res.stderr}`);
+    const sg = readFileSync(join(res.dir, "sgconfig.yml"), "utf8");
+
+    // team-rules must survive.
+    assert.match(sg, /team-rules/);
+    // rules must be present somewhere.
+    assert.match(sg, /rules/);
+
+    // No stray block-list line: a line that is exactly `  - rules` is the
+    // corruption signature from the old awk path.
+    assert.doesNotMatch(
+      sg,
+      /^[[:space:]]+- rules[[:space:]]*$/m,
+      "must not emit a stray `  - rules` block-list entry for inline form",
+    );
+
+    // Output must be valid YAML parseable by yq if available, and must
+    // resolve ruleDirs to a list containing both entries.
+    const yqOnPath =
+      spawnSync("sh", ["-c", "command -v yq"], { encoding: "utf8" }).stdout.trim();
+    if (yqOnPath) {
+      const parsed = spawnSync("yq", ["-o=json", ".ruleDirs"], {
+        input: sg,
+        encoding: "utf8",
+      });
+      assert.equal(
+        parsed.status,
+        0,
+        `yq could not parse merged sgconfig:\n${parsed.stderr}`,
+      );
+      const dirs = JSON.parse(parsed.stdout);
+      assert.ok(
+        Array.isArray(dirs) && dirs.includes("rules") && dirs.includes("team-rules"),
+        `ruleDirs should be an array containing rules and team-rules; got ${JSON.stringify(dirs)}`,
+      );
+    }
+  });
+
+  it("is a no-op when inline ruleDirs already lists rules", () => {
+    const oldSg = "ruleDirs: [rules, team-rules]\n";
+    const res = runInstall({
+      env: {
+        FEATHER_RULES: "markdown",
+        FEATHER_HOOKS: "",
+        FEATHER_SGCONFIG: "merge",
+      },
+      seedFiles: { "sgconfig.yml": oldSg },
+    });
+    assert.equal(res.status, 0, `install.sh failed:\n${res.stderr}`);
+    const sg = readFileSync(join(res.dir, "sgconfig.yml"), "utf8");
+    // Parse the inline list and count exact `rules` entries; "team-rules"
+    // must not be mistaken for "rules".
+    const m = sg.match(/^ruleDirs:\s*\[(.*)\]/m);
+    assert.ok(m, "expected an inline ruleDirs: [...] line");
+    const entries = m[1]
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    const rulesEntries = entries.filter((e) => e === "rules");
+    assert.equal(
+      rulesEntries.length,
+      1,
+      `should have exactly one 'rules' entry; got ${JSON.stringify(entries)}`,
+    );
+    assert.ok(
+      entries.includes("team-rules"),
+      "team-rules must survive the no-op",
+    );
+  });
+});
+
+describe("F8: yq merge preserves existing jobs (array append)", () => {
+  // Regression: merge_lefthook used yq's `*` operator, which REPLACES arrays.
+  // An existing pre-commit.jobs: [lint] was clobbered by feather's [prose].
+  // The fix uses `*+` so both jobs survive. The stub-yq test in slice 8 only
+  // proves plumbing (calls yq, no sidecar) — this test exercises real yq's
+  // actual array semantics.
+  it("keeps both the existing lint job and feather's prose job under real yq", () => {
+    if (!hasYq) {
+      // Skip-style: still pass, just don't assert anything yq-specific.
+      assert.ok(true, "yq not installed on this machine; skipping real-yq test");
+      return;
+    }
+    const oldLh =
+      "# my project hooks\npre-commit:\n  jobs:\n    - name: lint\n      run: eslint .\n";
+    const res = runInstall({
+      realYq: true,
+      env: {
+        FEATHER_RULES: "markdown",
+        FEATHER_HOOKS: "pre-commit",
+        FEATHER_LEFTHOOK: "merge",
+      },
+      seedFiles: { "lefthook.yml": oldLh },
+    });
+    assert.equal(res.status, 0, `install.sh failed:\n${res.stderr}`);
+
+    const merged = readFileSync(join(res.dir, "lefthook.yml"), "utf8");
+    assert.match(merged, /name: lint/, "existing lint job must survive the merge");
+    assert.match(merged, /name: prose/, "feather prose job must be present");
+    assert.ok(
+      !existsSync(join(res.dir, "lefthook.feather.yml")),
+      "sidecar should not exist when yq is present",
+    );
+
+    // Cross-check with real yq: parse the merged file and assert the
+    // pre-commit.jobs array literally contains both names. yq's -o=json
+    // emits each scalar as a quoted JSON string, so unwrap quotes.
+    const parsed = spawnSync(
+      "yq",
+      ["-o=json", ".pre-commit.jobs.[].name"],
+      { input: merged, encoding: "utf8" },
+    );
+    assert.equal(parsed.status, 0, `yq failed to parse merged output:\n${parsed.stderr}`);
+    const names = parsed.stdout
+      .trim()
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => s.replace(/^"(.*)"$/, "$1"));
+    assert.deepEqual(
+      names.sort(),
+      ["lint", "prose"],
+      `expected both lint and prose in pre-commit.jobs; got ${JSON.stringify(names)}`,
+    );
   });
 });

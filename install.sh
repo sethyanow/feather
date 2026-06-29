@@ -12,7 +12,9 @@
 #   FEATHER_RULES       comma list: markdown,comment (default: markdown,comment)
 #   FEATHER_HOOKS       comma list: pre-commit,commit-msg (default: both)
 #   FEATHER_LANG        comment rule language (default: typescript)
-#   FEATHER_RUN_INSTALL 1 = run lefthook install at the end (default: ask)
+#   FEATHER_RUN_INSTALL 1 = run lefthook install, 0 = skip; unset + interactive
+#                        prompts at the tty (default N), unset + FEATHER_YES=1
+#                        skips silently
 #   FEATHER_SGCONFIG    merge|replace|skip (default: merge)
 #   FEATHER_LEFTHOOK    merge|replace|skip (default: merge)
 
@@ -70,9 +72,10 @@ fetch() {
 	fi
 }
 
-# Does a comma list ($1) contain a word ($2)?
+# Does a comma list ($1) contain a word ($2)? Tolerates spaces around commas
+# so "markdown, comment" matches "comment" the same as "markdown,comment".
 has() {
-	echo ",$1," | grep -q ",$2,"
+	echo ",$1," | tr -d ' \t' | grep -q ",$2,"
 }
 
 # --- selection ------------------------------------------------------------
@@ -137,23 +140,53 @@ install_sgconfig() {
 	esac
 }
 
-# Merge feather's ruleDirs into an existing sgconfig.yml. Appends
-# `  - rules` under the existing ruleDirs: list if it isn't already there;
-# adds a ruleDirs: block if none exists.
+# Merge feather's ruleDirs into an existing sgconfig.yml. Handles three forms:
+#   - block list:  ruleDirs:\n  - team-rules   -> append `  - rules`
+#   - inline list: ruleDirs: [team-rules]       -> inject `rules` into brackets
+#   - none:                                   -> append a new ruleDirs block
 merge_sgconfig() {
-	if grep -q "^ruleDirs:" sgconfig.yml; then
-		if grep -qE "^[[:space:]]+- rules([[:space:]]|#.*)?$" sgconfig.yml; then
+	# Inline ruleDirs: [...] form?
+	if grep -qE "^ruleDirs:[[:space:]]*\[" sgconfig.yml; then
+		# Is `rules` already an entry in the inline list? Extract the bracket
+		# contents, split on commas, and look for an exact match. (Word-boundary
+		# greps misfire on `team-rules`, which contains the substring.)
+		if inline_has_rules; then
 			log "sgconfig.yml already lists rules; nothing to merge"
-		else
-			# Append `  - rules` after the ruleDirs: line.
-			awk '/^ruleDirs:/{print; print "  - rules"; next}1' sgconfig.yml >sgconfig.yml.tmp
-			mv sgconfig.yml.tmp sgconfig.yml
-			log "merged rules into existing sgconfig.yml ruleDirs"
+			return 0
 		fi
+		# Insert `rules` after the opening bracket as a bare scalar.
+		sed -E "/^ruleDirs:[[:space:]]*\[/s/(\[)/\1rules, /" sgconfig.yml >sgconfig.yml.tmp
+		mv sgconfig.yml.tmp sgconfig.yml
+		log "merged rules into existing inline sgconfig.yml ruleDirs"
+		return 0
+	fi
+
+	# Block-list form: already has a `  - rules` entry?
+	if grep -qE "^[[:space:]]+- rules([[:space:]]|#.*)?$" sgconfig.yml; then
+		log "sgconfig.yml already lists rules; nothing to merge"
+		return 0
+	fi
+
+	if grep -q "^ruleDirs:" sgconfig.yml; then
+		# Block list: append `  - rules` after the ruleDirs: line.
+		awk '/^ruleDirs:/{print; print "  - rules"; next}1' sgconfig.yml >sgconfig.yml.tmp
+		mv sgconfig.yml.tmp sgconfig.yml
+		log "merged rules into existing sgconfig.yml ruleDirs"
 	else
 		printf '\n%s\n' "$1" >>sgconfig.yml
 		log "appended ruleDirs: [rules] to sgconfig.yml"
 	fi
+}
+
+# Does the first `ruleDirs: [...]` line in sgconfig.yml list `rules` as an
+# entry? Reads the file from stdin-less global state (sgconfig.yml in cwd).
+inline_has_rules() {
+	# Strip everything except the bracket contents, one entry per line, and
+	# look for an exact `rules` match.
+	sed -nE 's/^ruleDirs:[[:space:]]*\[(.*)\].*/\1/p' sgconfig.yml |
+		tr ',' '\n' |
+		sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' |
+		grep -qx 'rules'
 }
 
 # --- lefthook config ------------------------------------------------------
@@ -208,11 +241,15 @@ install_lefthook() {
 		return 0
 	fi
 
-	# Build feather's full lefthook.yml into a temp file.
-	feather_lh_tmp=$(mktemp)
-	lefthook_header >"$feather_lh_tmp"
+	# Assemble feather's full lefthook.yml into a variable. POSIX sh has no
+	# mktemp, so build it via `$(...)` capture. Command substitution strips
+	# trailing newlines, so each heredoc carries exactly one trailing blank
+	# line and the next block carries a leading blank — the drift-guard test
+	# asserts the final bytes match the committed lefthook.yml.
+	feather_lh=$(lefthook_header)
 	if want_precommit; then
-		cat >>"$feather_lh_tmp" <<'EOF'
+		block=$(
+			cat <<'EOF'
 
 pre-commit:
   jobs:
@@ -225,22 +262,26 @@ pre-commit:
         - "*/.*"
       run: ast-grep scan {staged_files}
 EOF
+		)
+		feather_lh="${feather_lh}
+${block}"
 	fi
 	if want_commitmsg; then
-		mkdir -p scripts
-		fetch "scripts/check-commit-msg.mjs" "scripts/check-commit-msg.mjs"
-		cat >>"$feather_lh_tmp" <<'EOF'
+		block=$(
+			cat <<'EOF'
 
 commit-msg:
   jobs:
     - name: commit-style
       run: node scripts/check-commit-msg.mjs {1}
 EOF
+		)
+		feather_lh="${feather_lh}
+${block}"
 	fi
-	feather_lh=$(cat "$feather_lh_tmp")
-	rm -f "$feather_lh_tmp"
 
 	if [ ! -f lefthook.yml ]; then
+		fetch_commitmsg_checker_if_wanted
 		printf '%s\n' "$feather_lh" >lefthook.yml
 		log "wrote lefthook.yml"
 		return 0
@@ -249,6 +290,7 @@ EOF
 	backup_if_exists lefthook.yml
 	case "$FEATHER_LEFTHOOK" in
 	replace)
+		fetch_commitmsg_checker_if_wanted
 		printf '%s\n' "$feather_lh" >lefthook.yml
 		log "replaced lefthook.yml"
 		;;
@@ -256,9 +298,21 @@ EOF
 		log "left existing lefthook.yml untouched (FEATHER_LEFTHOOK=skip)"
 		;;
 	merge | *)
+		fetch_commitmsg_checker_if_wanted
 		merge_lefthook "$feather_lh"
 		;;
 	esac
+}
+
+# Fetch scripts/check-commit-msg.mjs, but only when the commit-msg hook was
+# selected. Skipped on FEATHER_LEFTHOOK=skip because the caller never reaches
+# here in that case — the checker is a repo-local asset and must not be
+# silently overwritten when the user told us to leave their config alone.
+fetch_commitmsg_checker_if_wanted() {
+	if want_commitmsg; then
+		mkdir -p scripts
+		fetch "scripts/check-commit-msg.mjs" "scripts/check-commit-msg.mjs"
+	fi
 }
 
 # Merge feather's jobs into an existing lefthook.yml. POSIX sh has no YAML
@@ -266,9 +320,11 @@ EOF
 # beside the original and tell the user how to finish the merge.
 merge_lefthook() {
 	if command -v yq >/dev/null 2>&1; then
-		tmp=$(mktemp)
+		# PID-suffixed temp file in cwd (POSIX sh has no mktemp). Cleaned up
+		# on every exit path below, including die().
+		tmp="./.feather-lh.$$.yml"
 		printf '%s\n' "$1" >"$tmp"
-		yq eval-all 'select(fi==0) * select(fi==1)' lefthook.yml "$tmp" >lefthook.yml.merged
+		yq eval-all 'select(fi==0) *+ select(fi==1)' lefthook.yml "$tmp" >lefthook.yml.merged
 		mv lefthook.yml.merged lefthook.yml
 		rm -f "$tmp"
 		log "deep-merged feather jobs into lefthook.yml via yq"
@@ -286,12 +342,13 @@ merge_lefthook() {
 # installer never installs anything itself.
 
 # Print the major version number from a tool's --version-ish output, or "" if
-# the tool is missing. $1 = tool name.
+# the tool is missing. $1 = tool name. POSIX-only: no `grep -o`, which is a
+# GNU/BSD extension; use sed to isolate the first run of digits.
 tool_major() {
 	cmd="$1"
 	out=$("$cmd" --version 2>/dev/null) || out=$("$cmd" version 2>/dev/null) || return 1
 	# Grab the first run of digits we see.
-	echo "$out" | grep -oE '[0-9]+' | head -n1
+	echo "$out" | sed -n 's/[^0-9]*\([0-9][0-9]*\).*/\1/p' | head -n1
 }
 
 check_deps() {
@@ -354,7 +411,23 @@ install_lefthook
 # --- optional lefthook install + next steps -------------------------------
 
 if want_precommit || want_commitmsg; then
+	# Decide whether to run `lefthook install`.
+	#   FEATHER_RUN_INSTALL=1 -> run; =0 -> skip.
+	#   unset + FEATHER_YES=1 -> skip silently (the installer was told not
+	#     to prompt, and the next-steps block tells the user to run it).
+	#   unset + interactive -> ask at the tty, default N.
+	run_install_hooks=0
 	if [ "${FEATHER_RUN_INSTALL}" = "1" ]; then
+		run_install_hooks=1
+	elif [ -z "${FEATHER_RUN_INSTALL}" ] && [ "${FEATHER_YES}" != "1" ]; then
+		printf "Run lefthook install now? [y/N] " >/dev/tty
+		read -r ans </dev/tty 2>/dev/null || ans=""
+		case "$ans" in
+		y | Y | yes | YES) run_install_hooks=1 ;;
+		esac
+	fi
+
+	if [ "$run_install_hooks" = "1" ]; then
 		log "running lefthook install..."
 		lefthook install
 		log "hooks installed"

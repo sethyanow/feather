@@ -16,9 +16,13 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-export const REPO_ROOT = join(import.meta.dirname, "..");
+// Node 18 (the project's documented minimum) lacks import.meta.dirname
+// (added in 20.11). Derive REPO_ROOT from import.meta.url instead so the
+// harness loads on every supported runtime.
+export const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const INSTALL_SH = join(REPO_ROOT, "install.sh");
 
 // The set of rule files install.sh knows about.
@@ -67,24 +71,42 @@ export const DEFAULT_STUBS = {
   yq: 'echo "v4.44.0"',
 };
 
+// Is a real yq available on this machine? Tests that need to exercise yq's
+// actual array-merge semantics gate on this.
+export const hasYq = (() => {
+  try {
+    return spawnSync("command", ["-v", "yq"], { shell: "/bin/sh", encoding: "utf8" }).status === 0;
+  } catch {
+    return false;
+  }
+})();
+
 // Run install.sh in a fresh temp dir with the given env.
 // Returns { status, stdout, stderr, dir, stubDir, lefthookCalled }.
+//
+// realYq: when true, omit the yq stub from the stub dir AND prepend the real
+// yq's directory to PATH so install.sh exercises actual yq semantics. Use for
+// tests that depend on yq's array-merge behavior (the stub can't model it).
 export function runInstall({
   env = {},
   stubs = DEFAULT_STUBS,
   seedFiles = {},
+  realYq = false,
 } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "feather-install-"));
-  const stubDir = makeStubDir(stubs);
+  const effectiveStubs = realYq
+    ? Object.fromEntries(Object.entries(stubs).filter(([k]) => k !== "yq"))
+    : stubs;
+  const stubDir = makeStubDir(effectiveStubs);
   const lefthookMarker = join(dir, ".lefthook-called");
 
   // Re-point the lefthook stub at the marker for *this* run.
   mkdirSync(dir, { recursive: true });
-  if (stubs.lefthook) {
+  if (effectiveStubs.lefthook) {
     writeFileSync(
       join(stubDir, "lefthook"),
       `#!/bin/sh
-${stubs.lefthook}
+${effectiveStubs.lefthook}
 [ "$1" = "install" ] && touch "${lefthookMarker}"
 `,
     );
@@ -98,8 +120,20 @@ ${stubs.lefthook}
     writeFileSync(abs, content);
   }
 
+  // Under realYq, prepend the directory containing the real yq binary so
+  // install.sh finds it ahead of the stub dir.
+  let pathPrefix = `${stubDir}`;
+  if (realYq) {
+    const which = spawnSync("sh", ["-c", "command -v yq"], {
+      encoding: "utf8",
+    }).stdout.trim();
+    if (which) {
+      pathPrefix = `${dirname(which)}:${stubDir}`;
+    }
+  }
+
   const fullEnv = {
-    PATH: `${stubDir}:/usr/bin:/bin`,
+    PATH: `${pathPrefix}:/usr/bin:/bin`,
     HOME: process.env.HOME,
     SHELL: process.env.SHELL ?? "/bin/sh",
     // Drive the installer non-interactively and from the repo checkout.
@@ -112,7 +146,18 @@ ${stubs.lefthook}
     cwd: dir,
     env: fullEnv,
     encoding: "utf8",
+    // Fail fast: if install.sh ever blocks (e.g. a stray /dev/tty prompt
+    // under non-interactive env), surface it as a clear test failure
+    // instead of hanging the runner indefinitely.
+    timeout: 30_000,
   });
+
+  if (res.error?.code === "ETIMEDOUT") {
+    throw new Error(
+      `install.sh timed out after 30000ms in ${dir}:\n` +
+        `--- stdout ---\n${res.stdout ?? ""}\n--- stderr ---\n${res.stderr ?? ""}`,
+    );
+  }
 
   return {
     status: res.status,
