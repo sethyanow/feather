@@ -823,6 +823,39 @@ describe("F6: commit-msg checker respects skip policy", () => {
       "repo-local checker must not be overwritten on skip",
     );
   });
+
+  it("backs up a customized check-commit-msg.mjs before overwriting it on merge", () => {
+    const customChecker =
+      "#!/usr/bin/env node\n// my checker with extra TYPES — keep me\nprocess.exit(0);\n";
+    const res = runInstall({
+      env: {
+        FEATHER_RULES: "",
+        FEATHER_HOOKS: "commit-msg",
+        FEATHER_LEFTHOOK: "merge",
+      },
+      seedFiles: {
+        "lefthook.yml": "commit-msg:\n  jobs:\n    - name: mine\n      run: true\n",
+        "scripts/check-commit-msg.mjs": customChecker,
+      },
+    });
+    assert.equal(res.status, 0, `install.sh failed:\n${res.stderr}`);
+
+    // The original must be preserved as a timestamped backup, mirroring how
+    // lefthook.yml / sgconfig.yml are protected before a write.
+    const backups = readdir(join(res.dir, "scripts")).filter((f) =>
+      f.startsWith("check-commit-msg.mjs.feather.bak."),
+    );
+    assert.equal(
+      backups.length,
+      1,
+      `expected exactly one checker backup; got ${JSON.stringify(backups)}`,
+    );
+    assert.equal(
+      readFileSync(join(res.dir, "scripts", backups[0]), "utf8"),
+      customChecker,
+      "checker backup must hold the original content",
+    );
+  });
 });
 
 describe("F4: sgconfig merge handles inline ruleDirs: [..]", () => {

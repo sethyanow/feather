@@ -365,6 +365,10 @@ ${block}"
 fetch_commitmsg_checker_if_wanted() {
 	if want_commitmsg; then
 		mkdir -p scripts
+		# An adopter may have tuned the checker (its TYPES list is a documented
+		# knob). Back up any existing copy before overwriting, just as we do for
+		# lefthook.yml and sgconfig.yml — never silently clobber their edits.
+		backup_if_exists scripts/check-commit-msg.mjs || true
 		fetch "scripts/check-commit-msg.mjs" "scripts/check-commit-msg.mjs"
 	fi
 }
