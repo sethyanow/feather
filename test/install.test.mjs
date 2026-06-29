@@ -189,6 +189,29 @@ describe("slice 9: optional lefthook install", () => {
     const out = res.stdout + res.stderr;
     assert.match(out, /ast-grep scan/);
   });
+
+  it("lefthookCalled reflects only the current run when dir is reused", () => {
+    const dir = mkdtempSync(join(tmpdir(), "feather-install-"));
+    const envWithInstall = {
+      FEATHER_RUN_INSTALL: "1",
+      FEATHER_RULES: "markdown",
+      FEATHER_HOOKS: "pre-commit",
+    };
+    const envWithoutInstall = {
+      FEATHER_RULES: "markdown",
+      FEATHER_HOOKS: "pre-commit",
+    };
+    const r1 = runInstall({ dir, env: envWithInstall });
+    assert.equal(r1.status, 0, `run 1 failed:\n${r1.stderr}`);
+    assert.ok(r1.lefthookCalled, "run 1 should invoke lefthook install");
+
+    const r2 = runInstall({ dir, env: envWithoutInstall });
+    assert.equal(r2.status, 0, `run 2 failed:\n${r2.stderr}`);
+    assert.ok(
+      !r2.lefthookCalled,
+      "run 2 must not inherit lefthookCalled from run 1",
+    );
+  });
 });
 
 describe("slice 8: lefthook merge fallback", () => {

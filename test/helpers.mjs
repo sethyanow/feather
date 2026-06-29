@@ -13,6 +13,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -107,6 +108,9 @@ export function runInstall({
 
   // Re-point the lefthook stub at the marker for *this* run.
   mkdirSync(dir, { recursive: true });
+  if (existsSync(lefthookMarker)) {
+    unlinkSync(lefthookMarker);
+  }
   if (effectiveStubs.lefthook) {
     writeFileSync(
       join(stubDir, "lefthook"),
