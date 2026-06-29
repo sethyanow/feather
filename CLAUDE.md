@@ -8,10 +8,10 @@ feather itself.
 ## Where things live
 
 - `rules/*.yml` — the checks. `md-*` scan markdown; `comment-*`/`sh-*`/`js-*`
-  scan comments in TypeScript / bash / JavaScript+mjs; the `*-output-caps-theater`
-  pair also scans user-facing output strings (shell `log`/`warn`/`die`, JS
-  `console.*`/`process.std*.write`). Each rule's own `note:` explains its regex
-  and edge cases.
+  scan comments in TypeScript / bash / JavaScript+mjs; the
+  `*-output-caps-theater` pair also scans user-facing output strings (shell
+  `log`/`warn`/`die`, JS `console.*`/`process.std*.write`). Each rule's own
+  `note:` explains its regex and edge cases.
 - `scripts/check-commit-msg.mjs` — the commit-msg validator. Pure node, no deps.
 - `sgconfig.yml` — points ast-grep at `rules/`.
 - `lefthook.yml` — pre-commit (prose hints) and commit-msg (the gate).
