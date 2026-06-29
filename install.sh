@@ -365,8 +365,11 @@ fetch_commitmsg_checker_if_wanted() {
 }
 
 # Merge feather's jobs into an existing lefthook.yml. POSIX sh has no YAML
-# parser, so a real deep merge needs yq; without it we write feather's config
-# beside the original and tell the user how to finish the merge.
+# parser, so a real deep merge needs mikefarah yq. We don't trust `command -v
+# yq` alone: an incompatible variant (e.g. python-yq, a jq wrapper) can be on
+# PATH yet fail the actual `eval-all`. So we *attempt* the merge and, on any
+# failure, write feather's config beside the original and tell the user how to
+# finish by hand — never aborting the install under `set -e`.
 merge_lefthook() {
 	if command -v yq >/dev/null 2>&1; then
 		# PID-suffixed temp file in cwd (POSIX sh has no mktemp). Cleaned up
@@ -377,15 +380,17 @@ merge_lefthook() {
 		# collapse every jobs array by name so a re-run doesn't stack a second
 		# copy of feather's jobs. The recurse-and-select form only touches nodes
 		# that already have a `jobs` key, so it invents no empty hook sections.
-		yq eval-all '(select(fi==0) *+ select(fi==1)) | (.. | select(has("jobs")).jobs) |= unique_by(.name)' lefthook.yml "$tmp" >lefthook.yml.merged
-		mv lefthook.yml.merged lefthook.yml
-		rm -f "$tmp"
-		log "deep-merged feather jobs into lefthook.yml via yq"
-	else
-		printf '%s\n' "$1" >lefthook.feather.yml
-		warn "lefthook.yml exists and yq is not installed; wrote lefthook.feather.yml."
-		warn "Install yq (brew install yq) and re-run, or merge the jobs by hand."
+		if yq eval-all '(select(fi==0) *+ select(fi==1)) | (.. | select(has("jobs")).jobs) |= unique_by(.name)' lefthook.yml "$tmp" >lefthook.yml.merged 2>/dev/null; then
+			mv lefthook.yml.merged lefthook.yml
+			rm -f "$tmp"
+			log "deep-merged feather jobs into lefthook.yml via yq"
+			return 0
+		fi
+		warn "yq is present but could not merge lefthook.yml (incompatible variant?)."
 	fi
+	printf '%s\n' "$1" >lefthook.feather.yml
+	warn "wrote lefthook.feather.yml beside your existing lefthook.yml."
+	warn "Install mikefarah yq (brew install yq) and re-run, or merge the jobs by hand."
 }
 
 # --- dependency detection (instruct-only; never auto-installs) ------------
