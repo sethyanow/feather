@@ -16,7 +16,8 @@ import {
   readdir,
   runInstall,
 } from "./helpers.mjs";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 describe("install harness", () => {
@@ -870,5 +871,294 @@ describe("F8: yq merge preserves existing jobs (array append)", () => {
       "false",
       "merge must not invent a commit-msg section when only pre-commit was involved",
     );
+  });
+});
+
+describe("no controlling tty: prompts fall back to defaults (set -e safe)", () => {
+  // One bug, five sites: `set -eu` + a `printf ... >/dev/tty` that aborts the
+  // whole script when /dev/tty can't be *opened* (no controlling terminal).
+  // `[ -r /dev/tty ]` checks the device's mode bits, which pass even with no
+  // tty, so the guard lies and execution falls into the bare printf. Each test
+  // forces the no-tty path via `detached: true` and drives ONE site.
+
+  it("tty/RULES: defaults FEATHER_RULES with no tty and no /dev/tty noise", () => {
+    const res = runInstall({
+      detached: true,
+      env: {
+        FEATHER_YES: "0", // bypass the YES short-circuit so the gate is reached
+        FEATHER_HOOKS: "", // no hooks -> line-493 prompt block skipped
+        FEATHER_LANG: "typescript", // override -> LANG gate dormant
+        // FEATHER_RULES intentionally unset: the gate under test.
+      },
+    });
+    assert.equal(res.status, 0, `install.sh aborted with no tty:\n${res.stderr}`);
+    // Defaulted to "markdown,comment": both rule groups present.
+    for (const f of MD_RULES) {
+      assert.ok(existsSync(join(res.dir, "rules", f)), `expected md rule ${f}`);
+    }
+    for (const f of COMMENT_RULES) {
+      assert.ok(
+        existsSync(join(res.dir, "rules", f)),
+        `expected comment rule ${f}`,
+      );
+    }
+    // The gate must DETECT the missing tty, not blunder into ask_yn and let its
+    // printf fail noisily. The lying `[ -r /dev/tty ]` guard produces
+    // "/dev/tty: Device not configured" on stderr; have_tty must not.
+    assert.doesNotMatch(
+      res.stderr,
+      /\/dev\/tty/,
+      `no-tty run must not emit /dev/tty errors:\n${res.stderr}`,
+    );
+  });
+
+  it("tty/HOOKS: defaults FEATHER_HOOKS with no tty and no /dev/tty noise", () => {
+    const res = runInstall({
+      detached: true,
+      env: {
+        FEATHER_YES: "0",
+        FEATHER_RULES: "markdown", // override -> RULES gate dormant, no comment -> LANG skipped
+        FEATHER_RUN_INSTALL: "0", // line-493 prompt still unfixed -> neutralize it
+        // FEATHER_HOOKS intentionally unset: the gate under test.
+      },
+    });
+    assert.equal(res.status, 0, `install.sh aborted with no tty:\n${res.stderr}`);
+    // Defaulted to both hooks.
+    const lh = readFileSync(join(res.dir, "lefthook.yml"), "utf8");
+    assert.match(lh, /pre-commit:/);
+    assert.match(lh, /commit-msg:/);
+    assert.doesNotMatch(
+      res.stderr,
+      /\/dev\/tty/,
+      `no-tty run must not emit /dev/tty errors:\n${res.stderr}`,
+    );
+  });
+
+  it("tty/LANG: defaults FEATHER_LANG with no tty (no set -e abort)", () => {
+    // Unlike RULES/HOOKS, this gate's else-branch printf runs at top level under
+    // active set -e, so the lying guard makes it CRASH, not just go noisy.
+    const res = runInstall({
+      detached: true,
+      env: {
+        FEATHER_YES: "0",
+        FEATHER_RULES: "comment", // want_comment -> LANG gate fires
+        FEATHER_HOOKS: "", // no hooks -> line-493 block skipped
+        // FEATHER_LANG intentionally unset: the gate under test.
+      },
+    });
+    assert.equal(res.status, 0, `install.sh aborted with no tty:\n${res.stderr}`);
+    const rule = readFileSync(
+      join(res.dir, "rules", "comment-caps-theater.yml"),
+      "utf8",
+    );
+    assert.match(rule, /^language: typescript$/m);
+    assert.doesNotMatch(
+      res.stderr,
+      /\/dev\/tty/,
+      `no-tty run must not emit /dev/tty errors:\n${res.stderr}`,
+    );
+  });
+
+  it("tty/check_deps: aborts cleanly with no tty when deps are missing", () => {
+    // No tty + missing dep + no FEATHER_DEPS_CONTINUE/FEATHER_YES signal: the
+    // prompt is unanswerable. Decision = Abort (honor the [y/N] default). Today
+    // it crashes at the bare printf BEFORE the die, so the die message is
+    // absent; the fix reaches a clean die.
+    const res = runInstall({
+      detached: true,
+      stubs: { ...DEFAULT_STUBS, "ast-grep": "exit 127" },
+      env: {
+        FEATHER_YES: "0",
+        FEATHER_RULES: "markdown",
+        FEATHER_HOOKS: "",
+        // FEATHER_DEPS_CONTINUE intentionally unset.
+      },
+    });
+    assert.notEqual(res.status, 0, "missing dep + no tty must abort");
+    // The clean-die message (lines 408/418), absent on the pre-fix crash.
+    assert.match(
+      res.stdout + res.stderr,
+      /install the dependencies above and re-run/,
+    );
+    assert.doesNotMatch(
+      res.stderr,
+      /\/dev\/tty/,
+      `abort must be clean, not a /dev/tty crash:\n${res.stderr}`,
+    );
+    // Aborted before any install work.
+    assert.ok(!existsSync(join(res.dir, "rules")), "must not write rules on abort");
+  });
+
+  it("tty/lefthook: skips the install prompt with no tty and prints guidance", () => {
+    // Hooks selected, FEATHER_RUN_INSTALL unset, not FEATHER_YES: today this
+    // reaches the prompt at the very end and crashes after all install work.
+    // No tty => take the default (don't run lefthook install), print guidance.
+    const res = runInstall({
+      detached: true,
+      env: {
+        FEATHER_YES: "0",
+        FEATHER_RULES: "markdown",
+        FEATHER_HOOKS: "pre-commit", // overrides -> RULES/HOOKS/LANG gates dormant
+        // FEATHER_RUN_INSTALL intentionally unset: reaches the prompt.
+      },
+    });
+    assert.equal(res.status, 0, `install.sh aborted with no tty:\n${res.stderr}`);
+    assert.equal(
+      res.lefthookCalled,
+      false,
+      "must not run lefthook install when it could not prompt",
+    );
+    assert.match(res.stdout + res.stderr, /ast-grep scan/, "next-steps guidance");
+    assert.doesNotMatch(
+      res.stderr,
+      /\/dev\/tty/,
+      `no-tty run must not emit /dev/tty errors:\n${res.stderr}`,
+    );
+  });
+});
+
+describe("policy validation: reject unknown SGCONFIG/LEFTHOOK values", () => {
+  // A typo'd policy must fail fast, not silently fall through the `merge | *)`
+  // wildcard and mangle the user's existing config.
+  it("rejects an unknown FEATHER_SGCONFIG and leaves the file untouched", () => {
+    const oldSg = "ruleDirs:\n  - my-old-rules\n";
+    const res = runInstall({
+      env: {
+        FEATHER_RULES: "markdown",
+        FEATHER_HOOKS: "",
+        FEATHER_SGCONFIG: "skpi",
+      },
+      seedFiles: { "sgconfig.yml": oldSg },
+    });
+    assert.notEqual(res.status, 0, "an unknown policy must abort");
+    assert.match(res.stdout + res.stderr, /FEATHER_SGCONFIG/);
+    assert.equal(
+      readFileSync(join(res.dir, "sgconfig.yml"), "utf8"),
+      oldSg,
+      "existing sgconfig.yml must be untouched",
+    );
+  });
+
+  it("rejects an unknown FEATHER_LEFTHOOK and leaves the file untouched", () => {
+    const oldLh = "pre-commit:\n  jobs: []\n";
+    const res = runInstall({
+      env: {
+        FEATHER_RULES: "markdown",
+        FEATHER_HOOKS: "pre-commit",
+        FEATHER_LEFTHOOK: "bogus",
+      },
+      seedFiles: { "lefthook.yml": oldLh },
+    });
+    assert.notEqual(res.status, 0, "an unknown policy must abort");
+    assert.match(res.stdout + res.stderr, /FEATHER_LEFTHOOK/);
+    assert.equal(
+      readFileSync(join(res.dir, "lefthook.yml"), "utf8"),
+      oldLh,
+      "existing lefthook.yml must be untouched",
+    );
+  });
+});
+
+describe("sgconfig merge: block-list dup check is scoped to ruleDirs", () => {
+  // A `- rules` entry under a DIFFERENT key must not convince the merge that
+  // ruleDirs already lists rules. The old broad grep matched it anywhere.
+  it("adds rules under ruleDirs even when `- rules` exists under another key", () => {
+    const oldSg = "ruleDirs:\n  - team-rules\ntestConfigs:\n  - rules\n";
+    const res = runInstall({
+      env: {
+        FEATHER_RULES: "markdown",
+        FEATHER_HOOKS: "",
+        FEATHER_SGCONFIG: "merge",
+      },
+      seedFiles: { "sgconfig.yml": oldSg },
+    });
+    assert.equal(res.status, 0, `install.sh failed:\n${res.stderr}`);
+    const sg = readFileSync(join(res.dir, "sgconfig.yml"), "utf8");
+    const lines = sg.split("\n");
+    const idx = lines.findIndex((l) => l === "ruleDirs:");
+    assert.ok(idx >= 0, "expected a ruleDirs: block line");
+    // The merge inserts `  - rules` immediately under ruleDirs:. In the buggy
+    // no-op case the next line is still `  - team-rules`.
+    assert.equal(
+      lines[idx + 1],
+      "  - rules",
+      `rules must be merged under ruleDirs; got:\n${sg}`,
+    );
+    // team-rules survives, testConfigs' own `- rules` is left alone (two total).
+    assert.match(sg, /  - team-rules/);
+    assert.equal(
+      sg.split("\n").filter((l) => l === "  - rules").length,
+      2,
+      "ruleDirs gains rules; testConfigs keeps its own",
+    );
+  });
+});
+
+describe("backup_if_exists: distinct names across same-timestamp reruns", () => {
+  // Two rapid reruns produce the same `date +%Y...` timestamp. The backup name
+  // must still be unique, or the second run clobbers the first backup.
+  it("creates two distinct backups when the timestamp collides", () => {
+    const dir = mkdtempSync(join(tmpdir(), "feather-install-"));
+    const stubs = { ...DEFAULT_STUBS, date: "echo 20260101000000" }; // fixed ts
+    const env = {
+      FEATHER_RULES: "markdown",
+      FEATHER_HOOKS: "",
+      FEATHER_SGCONFIG: "replace",
+    };
+    const r1 = runInstall({
+      dir,
+      stubs,
+      env,
+      seedFiles: { "sgconfig.yml": "ruleDirs:\n  - old\n" },
+    });
+    assert.equal(r1.status, 0, `run 1 failed:\n${r1.stderr}`);
+    // sgconfig.yml now exists (feather's) from run 1; back it up again.
+    const r2 = runInstall({ dir, stubs, env });
+    assert.equal(r2.status, 0, `run 2 failed:\n${r2.stderr}`);
+
+    const backups = readdir(dir).filter((f) =>
+      f.startsWith("sgconfig.yml.feather.bak."),
+    );
+    assert.equal(
+      backups.length,
+      2,
+      `expected 2 distinct backups; got ${JSON.stringify(backups)}`,
+    );
+    assert.equal(new Set(backups).size, 2, "backup names must be unique");
+  });
+});
+
+describe("token validation: reject unknown FEATHER_RULES/FEATHER_HOOKS values", () => {
+  // A typo'd token silently selects nothing today (has() matches nothing) and
+  // the installer exits 0 having done nothing useful. It must fail fast.
+  it("rejects an unknown FEATHER_RULES token and writes no rules", () => {
+    const res = runInstall({
+      env: { FEATHER_RULES: "markdwn", FEATHER_HOOKS: "" },
+    });
+    assert.notEqual(res.status, 0, "a typo'd rule token must abort");
+    assert.match(res.stdout + res.stderr, /FEATHER_RULES/);
+    assert.ok(
+      !existsSync(join(res.dir, "rules")),
+      "must not create rules/ on an invalid token",
+    );
+  });
+
+  it("rejects an unknown FEATHER_HOOKS token and writes no lefthook.yml", () => {
+    const res = runInstall({
+      env: { FEATHER_RULES: "markdown", FEATHER_HOOKS: "pre-comit" },
+    });
+    assert.notEqual(res.status, 0, "a typo'd hook token must abort");
+    assert.match(res.stdout + res.stderr, /FEATHER_HOOKS/);
+    assert.ok(
+      !existsSync(join(res.dir, "lefthook.yml")),
+      "must not write lefthook.yml on an invalid token",
+    );
+  });
+
+  it("accepts an empty FEATHER_HOOKS (no tokens = no hooks)", () => {
+    const res = runInstall({
+      env: { FEATHER_RULES: "markdown", FEATHER_HOOKS: "" },
+    });
+    assert.equal(res.status, 0, `empty hook list must be valid:\n${res.stderr}`);
   });
 });

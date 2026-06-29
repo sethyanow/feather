@@ -90,8 +90,15 @@ export function runInstall({
   stubs = DEFAULT_STUBS,
   seedFiles = {},
   realYq = false,
+  // dir: reuse an existing temp dir across runs (e.g. backup-collision tests
+  // need two runs in the same cwd). Defaults to a fresh mkdtemp.
+  dir,
+  // detached: start the child in a new session with no controlling terminal,
+  // so /dev/tty cannot be opened. Deterministically exercises the no-tty path
+  // (otherwise a stray /dev/tty read would block to the timeout).
+  detached = false,
 } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), "feather-install-"));
+  dir = dir ?? mkdtempSync(join(tmpdir(), "feather-install-"));
   const effectiveStubs = realYq
     ? Object.fromEntries(Object.entries(stubs).filter(([k]) => k !== "yq"))
     : stubs;
@@ -148,6 +155,7 @@ if [ "$1" = "install" ]; then touch "${lefthookMarker}"; fi
     cwd: dir,
     env: fullEnv,
     encoding: "utf8",
+    detached,
     // Fail fast: if install.sh ever blocks (e.g. a stray /dev/tty prompt
     // under non-interactive env), surface it as a clear test failure
     // instead of hanging the runner indefinitely.

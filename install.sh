@@ -68,6 +68,20 @@ has() {
 	echo ",$1," | tr -d ' \t' | grep -q ",$2,"
 }
 
+# die if comma-list $1 (labelled $2) holds a token outside the space-separated
+# allowed set $3. An empty list = no tokens = OK. Word-splitting on the
+# comma->space rewrite tolerates spaces after commas, matching has().
+validate_csv() {
+	_bad=""
+	for _it in $(echo "$1" | tr ',' ' '); do
+		case " $3 " in
+		*" $_it "*) ;;
+		*) _bad="${_bad:+$_bad }$_it" ;;
+		esac
+	done
+	[ -z "$_bad" ] || die "invalid $2 value(s): ${_bad} (allowed: $(echo "$3" | tr ' ' ','))"
+}
+
 # Ask a yes/no question at the tty. $1 = label, $2 = default (Y or N). Returns
 # 0 for yes, 1 for no; an empty answer takes the default. `if`-guarded at the
 # call site so a "no" never trips `set -e`.
@@ -81,6 +95,14 @@ ask_yn() {
 	*) return 1 ;;
 	esac
 }
+
+# True only if /dev/tty can actually be opened (a controlling terminal exists).
+# `[ -r /dev/tty ]` only checks the device's mode bits and passes even when the
+# process has no controlling terminal — opening it then fails with ENXIO, which
+# aborts a bare `printf ... >/dev/tty` under `set -e` (and spews "Device not
+# configured" even where ask_yn's if-guard swallows the failure). Probe by
+# actually opening it.
+have_tty() { { : </dev/tty; } 2>/dev/null; }
 
 # --- selection ------------------------------------------------------------
 
@@ -138,7 +160,7 @@ install_sgconfig() {
 	skip)
 		log "left existing sgconfig.yml untouched (FEATHER_SGCONFIG=skip)"
 		;;
-	merge | *)
+	merge)
 		merge_sgconfig "$feather_sg"
 		;;
 	esac
@@ -165,8 +187,10 @@ merge_sgconfig() {
 		return 0
 	fi
 
-	# Block-list form: already has a `  - rules` entry?
-	if grep -qE "^[[:space:]]+- rules([[:space:]]|#.*)?$" sgconfig.yml; then
+	# Block-list form: does the ruleDirs: block already have a `  - rules` entry?
+	# Scoped to that block — a `- rules` under some other key (e.g. testConfigs)
+	# must not block the merge.
+	if block_has_rules; then
 		log "sgconfig.yml already lists rules; nothing to merge"
 		return 0
 	fi
@@ -180,6 +204,18 @@ merge_sgconfig() {
 		printf '\n%s\n' "$1" >>sgconfig.yml
 		log "appended ruleDirs: [rules] to sgconfig.yml"
 	fi
+}
+
+# Does the block-form `ruleDirs:` list already contain a `  - rules` entry?
+# Scoped to the ruleDirs: block only — exits 0 (found) / 1 (not found), so a
+# `- rules` under another top-level key does not count.
+block_has_rules() {
+	awk '
+		/^ruleDirs:[[:space:]]*$/ { inblock = 1; next }
+		/^[^[:space:]#]/ { inblock = 0 }
+		inblock && /^[[:space:]]+- rules([[:space:]]|#.*)?$/ { found = 1 }
+		END { exit found ? 0 : 1 }
+	' sgconfig.yml
 }
 
 # Does the first `ruleDirs: [...]` line in sgconfig.yml list `rules` as an
@@ -208,8 +244,17 @@ inline_has_rules() {
 backup_if_exists() {
 	if [ -f "$1" ]; then
 		ts=$(date +%Y%m%d%H%M%S)
-		cp "$1" "$1.feather.bak.${ts}"
-		log "backed up existing $1 -> $1.feather.bak.${ts}"
+		# Two reruns in the same second share a timestamp; disambiguate with PID
+		# + counter so the second backup never clobbers the first. The first,
+		# uncontended write keeps the plain `<file>.feather.bak.<ts>` name.
+		bak="$1.feather.bak.${ts}"
+		n=0
+		while [ -e "$bak" ]; do
+			n=$((n + 1))
+			bak="$1.feather.bak.${ts}-$$-${n}"
+		done
+		cp "$1" "$bak"
+		log "backed up existing $1 -> $bak"
 		return 0
 	fi
 	return 1
@@ -301,7 +346,7 @@ ${block}"
 	skip)
 		log "left existing lefthook.yml untouched (FEATHER_LEFTHOOK=skip)"
 		;;
-	merge | *)
+	merge)
 		fetch_commitmsg_checker_if_wanted
 		merge_lefthook "$feather_lh"
 		;;
@@ -411,6 +456,12 @@ check_deps() {
 		warn "continuing despite missing deps (FEATHER_YES=1)"
 		return 0
 	fi
+	# No tty to prompt at: honor the [y/N] default (N) and abort cleanly rather
+	# than crash on `printf >/dev/tty`. Opt into continuing non-interactively
+	# with FEATHER_DEPS_CONTINUE=1 or FEATHER_YES=1.
+	if ! have_tty; then
+		die "aborting; install the dependencies above and re-run"
+	fi
 	printf "Continue setup anyway? [y/N] " >/dev/tty
 	read -r ans </dev/tty 2>/dev/null || ans=""
 	case "$ans" in
@@ -428,7 +479,7 @@ check_deps() {
 
 if [ -n "${FEATHER_RULES+x}" ]; then
 	: # override: use the env value verbatim
-elif [ "$FEATHER_YES" = 1 ] || [ ! -r /dev/tty ]; then
+elif [ "$FEATHER_YES" = 1 ] || ! have_tty; then
 	FEATHER_RULES="markdown,comment"
 else
 	_rules=""
@@ -439,7 +490,7 @@ fi
 
 if [ -n "${FEATHER_HOOKS+x}" ]; then
 	: # override
-elif [ "$FEATHER_YES" = 1 ] || [ ! -r /dev/tty ]; then
+elif [ "$FEATHER_YES" = 1 ] || ! have_tty; then
 	FEATHER_HOOKS="pre-commit,commit-msg"
 else
 	_hooks=""
@@ -452,7 +503,7 @@ fi
 if want_comment; then
 	if [ -n "${FEATHER_LANG+x}" ]; then
 		: # override
-	elif [ "$FEATHER_YES" = 1 ] || [ ! -r /dev/tty ]; then
+	elif [ "$FEATHER_YES" = 1 ] || ! have_tty; then
 		FEATHER_LANG="typescript"
 	else
 		printf 'Comment source language? [typescript] ' >/dev/tty
@@ -473,6 +524,22 @@ if want_comment; then
 	esac
 fi
 
+# Reject typo'd rule/hook tokens up front: an unknown token otherwise selects
+# nothing silently and the installer exits 0 having done nothing.
+validate_csv "$FEATHER_RULES" FEATHER_RULES "markdown comment"
+validate_csv "$FEATHER_HOOKS" FEATHER_HOOKS "pre-commit commit-msg"
+
+# Reject unknown write policies up front (before any backup/merge touches a
+# file), so a typo can't fall through a `merge | *)` wildcard and mangle config.
+case "$FEATHER_SGCONFIG" in
+replace | skip | merge) ;;
+*) die "invalid FEATHER_SGCONFIG '${FEATHER_SGCONFIG}': use merge, replace, or skip" ;;
+esac
+case "$FEATHER_LEFTHOOK" in
+replace | skip | merge) ;;
+*) die "invalid FEATHER_LEFTHOOK '${FEATHER_LEFTHOOK}': use merge, replace, or skip" ;;
+esac
+
 check_deps
 install_rules
 install_sgconfig
@@ -489,7 +556,7 @@ if want_precommit || want_commitmsg; then
 	run_install_hooks=0
 	if [ "${FEATHER_RUN_INSTALL}" = "1" ]; then
 		run_install_hooks=1
-	elif [ -z "${FEATHER_RUN_INSTALL}" ] && [ "${FEATHER_YES}" != "1" ]; then
+	elif [ -z "${FEATHER_RUN_INSTALL}" ] && [ "${FEATHER_YES}" != "1" ] && have_tty; then
 		printf "Run lefthook install now? [y/N] " >/dev/tty
 		read -r ans </dev/tty 2>/dev/null || ans=""
 		case "$ans" in
