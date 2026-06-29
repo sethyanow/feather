@@ -377,10 +377,12 @@ merge_lefthook() {
 		tmp="./.feather-lh.$$.yml"
 		printf '%s\n' "$1" >"$tmp"
 		# Deep-merge (`*+` appends arrays so existing jobs survive), then
-		# collapse every jobs array by name so a re-run doesn't stack a second
-		# copy of feather's jobs. The recurse-and-select form only touches nodes
-		# that already have a `jobs` key, so it invents no empty hook sections.
-		if yq eval-all '(select(fi==0) *+ select(fi==1)) | (.. | select(has("jobs")).jobs) |= unique_by(.name)' lefthook.yml "$tmp" >lefthook.yml.merged 2>/dev/null &&
+		# collapse re-runs of feather's *named* jobs without dropping the
+		# user's anonymous ones: dedup by name, but key each unnamed job on its
+		# index so `unique_by` keeps it distinct. `to_entries` preserves order,
+		# so job order is unchanged. The recurse-and-select form only touches
+		# nodes that already have a `jobs` key, so it invents no empty sections.
+		if yq eval-all '(select(fi==0) *+ select(fi==1)) | (.. | select(has("jobs")).jobs) |= (to_entries | unique_by(.value.name // ("__unnamed_" + (.key | tostring))) | map(.value))' lefthook.yml "$tmp" >lefthook.yml.merged 2>/dev/null &&
 			mv lefthook.yml.merged lefthook.yml; then
 			rm -f "$tmp"
 			log "deep-merged feather jobs into lefthook.yml via yq"

@@ -993,6 +993,38 @@ describe("F8: yq merge preserves existing jobs (array append)", () => {
       "merge must not invent a commit-msg section when only pre-commit was involved",
     );
   });
+
+  it("preserves a user's unnamed jobs (unique_by(.name) must not collapse them)", () => {
+    if (!hasYq) {
+      assert.ok(true, "yq not installed on this machine; skipping real-yq test");
+      return;
+    }
+    // Two unnamed jobs both resolve `.name` to null, so unique_by(.name)
+    // collapses them into one — silently dropping the user's second job.
+    const oldLh =
+      "pre-commit:\n" +
+      "  jobs:\n" +
+      "    - run: eslint .\n" +
+      "    - run: stylelint .\n" +
+      "    - name: lint\n" +
+      "      run: golint\n";
+    const res = runInstall({
+      realYq: true,
+      env: {
+        FEATHER_RULES: "markdown",
+        FEATHER_HOOKS: "pre-commit",
+        FEATHER_LEFTHOOK: "merge",
+      },
+      seedFiles: { "lefthook.yml": oldLh },
+    });
+    assert.equal(res.status, 0, `install.sh failed:\n${res.stderr}`);
+
+    const merged = readFileSync(join(res.dir, "lefthook.yml"), "utf8");
+    assert.match(merged, /run: eslint \./, "first unnamed job must survive");
+    assert.match(merged, /run: stylelint \./, "second unnamed job must survive");
+    assert.match(merged, /name: lint/, "named job must survive");
+    assert.match(merged, /name: prose/, "feather prose job must be present");
+  });
 });
 
 describe("no controlling tty: prompts fall back to defaults (set -e safe)", () => {
