@@ -372,20 +372,21 @@ fetch_commitmsg_checker_if_wanted() {
 # finish by hand — never aborting the install under `set -e`.
 merge_lefthook() {
 	if command -v yq >/dev/null 2>&1; then
-		# PID-suffixed temp file in cwd (POSIX sh has no mktemp). Cleaned up
-		# on every exit path below, including die().
+		# PID-suffixed temp file in cwd (POSIX sh has no mktemp). Removed on
+		# both the success and failure paths below.
 		tmp="./.feather-lh.$$.yml"
 		printf '%s\n' "$1" >"$tmp"
 		# Deep-merge (`*+` appends arrays so existing jobs survive), then
 		# collapse every jobs array by name so a re-run doesn't stack a second
 		# copy of feather's jobs. The recurse-and-select form only touches nodes
 		# that already have a `jobs` key, so it invents no empty hook sections.
-		if yq eval-all '(select(fi==0) *+ select(fi==1)) | (.. | select(has("jobs")).jobs) |= unique_by(.name)' lefthook.yml "$tmp" >lefthook.yml.merged 2>/dev/null; then
-			mv lefthook.yml.merged lefthook.yml
+		if yq eval-all '(select(fi==0) *+ select(fi==1)) | (.. | select(has("jobs")).jobs) |= unique_by(.name)' lefthook.yml "$tmp" >lefthook.yml.merged 2>/dev/null &&
+			mv lefthook.yml.merged lefthook.yml; then
 			rm -f "$tmp"
 			log "deep-merged feather jobs into lefthook.yml via yq"
 			return 0
 		fi
+		rm -f "$tmp" lefthook.yml.merged
 		warn "yq is present but could not merge lefthook.yml (incompatible variant?)."
 	fi
 	printf '%s\n' "$1" >lefthook.feather.yml

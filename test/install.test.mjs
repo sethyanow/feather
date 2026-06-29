@@ -332,6 +332,31 @@ echo "yq 3.4.3"`;
     );
     assert.match(res.stdout + res.stderr, /yq/i, "should mention yq in the note");
   });
+
+  it("leaves no temp or partial merge file behind when yq fails mid-merge", () => {
+    const yqStub = `#!/bin/sh
+if [ "$1" = "eval-all" ] || [ "$1" = "eval" ]; then exit 1; fi
+echo "yq 3.4.3"`;
+    const res = runInstall({
+      stubs: { ...DEFAULT_STUBS, yq: yqStub },
+      env: {
+        FEATHER_RULES: "markdown",
+        FEATHER_HOOKS: "pre-commit",
+        FEATHER_LEFTHOOK: "merge",
+      },
+      seedFiles: { "lefthook.yml": oldLh },
+    });
+    assert.equal(res.status, 0, `install.sh failed:\n${res.stderr}`);
+
+    const leftovers = readdir(res.dir).filter((f) =>
+      f.startsWith(".feather-lh."),
+    );
+    assert.deepEqual(leftovers, [], `stray temp file(s): ${leftovers}`);
+    assert.ok(
+      !existsSync(join(res.dir, "lefthook.yml.merged")),
+      "partial lefthook.yml.merged must be cleaned up",
+    );
+  });
 });
 
 describe("slice 7: sgconfig replace / skip / merge", () => {
