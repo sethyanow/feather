@@ -1,0 +1,24 @@
+# Scans user-facing output strings (arguments to log/warn/die/fatal/echo/printf),
+# not comments — the place a shell script shouts at the reader.
+id: sh-output-caps-theater
+language: bash
+severity: hint
+message: >-
+  Caps-theater in script output — an all-caps emphasis word (MUST, NEVER, NOT,
+  ONLY...) inside a user-facing string. The reader sees this; write plainly and
+  let the sentence carry the weight. Rewrite the emphasis as prose.
+note: >-
+  Scoped by a relational rule to strings that are arguments of an output command
+  (log/warn/die/fatal/echo/printf), so comparison literals, env values, and yq
+  programs never fire — only what the user actually reads. Whitelist is the same
+  curated emphasis set as sh-caps-theater. A hint, not a fail. Run
+  `ast-grep scan --rule rules/sh-output-caps-theater.yml`.
+rule:
+  kind: string
+  regex: \b(MUST|NEVER|ALWAYS|NOT|ONLY|EXACTLY|EXACT|SAME|BOTH|REAL|EVERY|SINGLE|CANNOT)\b
+  inside:
+    kind: command
+    stopBy: end
+    has:
+      field: name
+      regex: '^(log|warn|die|fatal|echo|printf)$'

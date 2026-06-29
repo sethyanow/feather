@@ -6,9 +6,9 @@
 // recovery, so a rejected commit gets a fresh message, not an amend.
 //
 // Pure Node, no npm dependencies. Argument: path to the commit message file
-// (lefthook passes {1}). The TYPES list and the opinionated bans (load-bearing,
-// "this commit", "as requested by") are the parts adopters tune — see
-// docs/adapting.md.
+// (lefthook passes {1}). The TYPES list and the opinionated bans (the
+// vague-importance tic, "this commit", "as requested by") are the parts
+// adopters tune — see docs/adapting.md.
 
 import { readFileSync } from "node:fs";
 
@@ -68,7 +68,8 @@ if (/\p{Extended_Pictographic}/u.test(subject)) {
   fails.push("No emoji in the subject.");
 }
 
-// "load-bearing" terminology is forbidden anywhere in the message.
+// The same vague-importance tic that comment-load-bearing flags is forbidden
+// anywhere in the message.
 if (/(?:^|[^\w-])load[\s_-]*bearing/i.test(text)) {
   fails.push('"load-bearing" terminology is forbidden — pick a different word.');
 }

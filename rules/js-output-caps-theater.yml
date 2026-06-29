@@ -1,0 +1,24 @@
+# Scans user-facing output strings (arguments to console.* and
+# process.stdout/stderr.write), not comments — where javascript shouts at the user.
+id: js-output-caps-theater
+language: javascript
+severity: hint
+message: >-
+  Caps-theater in program output — an all-caps emphasis word (MUST, NEVER, NOT,
+  ONLY...) inside a user-facing string. The reader sees this; write plainly and
+  let the sentence carry the weight. Rewrite the emphasis as prose.
+note: >-
+  Scoped by a relational rule to strings passed to an output sink
+  (console.log/error/warn/info/debug or process.stdout/stderr.write), so
+  ordinary string values and assert messages never fire — only what the user
+  reads. Whitelist matches js-caps-theater. A hint, not a fail. Run
+  `ast-grep scan --rule rules/js-output-caps-theater.yml`.
+rule:
+  kind: string
+  regex: \b(MUST|NEVER|ALWAYS|NOT|ONLY|EXACTLY|EXACT|SAME|BOTH|REAL|EVERY|SINGLE|CANNOT)\b
+  inside:
+    kind: call_expression
+    stopBy: end
+    has:
+      field: function
+      regex: '^(console\.(log|error|warn|info|debug)|process\.(stdout|stderr)\.write)$'

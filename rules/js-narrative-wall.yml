@@ -1,0 +1,23 @@
+# JavaScript sibling of comment-narrative-wall — scans `//` and `/* */` comments
+# in javascript/mjs sources.
+id: js-narrative-wall
+language: javascript
+severity: hint
+message: >-
+  Narrative-wall comment — a block comment of 9+ lines. Dense prose doing the
+  job of structure: the reader can't tell decision from evidence from aside, and
+  the key sentence drowns in supporting context. Consider splitting into a short
+  lead ("what + why") plus structured detail, or moving the long rationale to a
+  doc the comment links.
+note: >-
+  Wrap-invariant by design — it catches both forms of the same wall: a 9+-line
+  `/* */` block, or a single physical line of 300+ chars. (A run of adjacent
+  `//` lines parses as separate nodes, so the block form is detected on `/* */`
+  comments.) A hint, not a fail — a long header with real @param/@returns detail
+  is fine; the signal is prose that braids what/why/evidence into one block. Run
+  `ast-grep scan --rule rules/js-narrative-wall.yml`.
+rule:
+  kind: comment
+  any:
+    - regex: (\n.*){8,}
+    - regex: '[^\n]{300,}'

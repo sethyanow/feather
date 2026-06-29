@@ -63,7 +63,10 @@ sed -i '' 's/^language: typescript/language: python/' rules/comment-*.yml
 ast-grep's built-in languages include `python`, `rust`, `go`, `java`, `c`,
 `cpp`, `javascript`, `tsx`, and more. The five `md-*.yml` rules are markdown and
 need no change. To cover several languages at once, duplicate a `comment-*.yml`
-with a new `id` and a different `language`.
+with a new `id` and a different `language`. Feather's own repo ships `sh-*` and
+`js-*` rules as worked examples of exactly that (bash and javascript, plus an
+output-string `*-output-caps-theater` variant); they are not installed by
+`install.sh`, so copy them in by hand if you want them.
 
 ## 4. Point the hook at your files
 

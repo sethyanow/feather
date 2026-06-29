@@ -308,7 +308,7 @@ install_lefthook() {
 pre-commit:
   jobs:
     - name: prose
-      glob: "*.{ts,tsx,js,md}"
+      glob: "*.{ts,tsx,js,mjs,md,sh}"
       # Skip dot-directories (.github, .vendor, ...) — installed/vendored
       # content, not your authored prose.
       exclude:
@@ -574,7 +574,7 @@ if [ "$lefthook_sidecar" = "1" ]; then
 	# Merge fell back to the sidecar: lefthook.yml is unchanged, so running
 	# `lefthook install` now would wire the old config and falsely report
 	# success. Tell the user to finish the merge first.
-	warn "feather's hooks are NOT wired: lefthook.yml was left unmerged."
+	warn "feather's hooks are not wired: lefthook.yml was left unmerged."
 	warn "Merge lefthook.feather.yml into lefthook.yml, then run: lefthook install"
 elif want_precommit || want_commitmsg; then
 	# Decide whether to run `lefthook install`.
