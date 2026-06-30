@@ -120,4 +120,4 @@ and edit the wording.
 
 ## License
 
-MIT — see [LICENSE](LICENSE) and <https://seth.mit-license.org/>.
+MIT — see [LICENSE](LICENSE)
