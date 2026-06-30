@@ -1,0 +1,18 @@
+# Shell sibling of comment-source-line-cite — scans `#` comments in bash sources.
+id: sh-source-line-cite
+language: bash
+severity: hint
+message: >-
+  Source line-number citation in a comment (`:NNN`, e.g. `parser.ts:251`). Line
+  refs rot the moment the cited file shifts by one line, then silently point at
+  the wrong code. Cite the symbol name instead (`parseHeader`'s lookahead
+  guard), which an LSP can resolve and which survives edits.
+note: >-
+  Catches the same footgun that infests fix-plans and review notes — a citation
+  that looks precise but decays. A symbol reference is durable; a `:NNN` is a
+  timestamp. Run `ast-grep scan --rule rules/sh-source-line-cite.yml`. Review
+  each: a range into a generated artifact may be intentional, but most are
+  rot-in-waiting.
+rule:
+  kind: comment
+  regex: :\d{2,4}\b

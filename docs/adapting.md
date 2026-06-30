@@ -4,6 +4,12 @@ A checklist for wiring feather's prose-hygiene rules and commit-msg gate into a
 project. Written to be followed by a person or by an agent — each step is a
 concrete edit or command. Work top to bottom.
 
+The install script (`install.sh`, see the README) automates steps 1-6 below:
+tool checks, rule/hook selection, language rewrite, config backup, and
+`lefthook install`. The `lefthook.yml` merge step needs `yq`; without it the
+script writes `lefthook.feather.yml` beside your file. The rest of this doc is
+the manual path and the tuning knobs.
+
 ## What you are installing
 
 Two enforcement tiers:
@@ -21,7 +27,7 @@ Three binaries, none of them an npm dependency of your project:
 
 - [ast-grep](https://ast-grep.github.io) — runs the rules.
 - [lefthook](https://lefthook.dev) — wires the git hooks.
-- Node 18+ — runs the commit-msg checker (pure `node:fs`, no packages).
+- Node 22+ — runs the commit-msg checker (pure `node:fs`, no packages).
 
 ```sh
 ast-grep --version
@@ -57,7 +63,10 @@ sed -i '' 's/^language: typescript/language: python/' rules/comment-*.yml
 ast-grep's built-in languages include `python`, `rust`, `go`, `java`, `c`,
 `cpp`, `javascript`, `tsx`, and more. The five `md-*.yml` rules are markdown and
 need no change. To cover several languages at once, duplicate a `comment-*.yml`
-with a new `id` and a different `language`.
+with a new `id` and a different `language`. Feather's own repo ships `sh-*` and
+`js-*` rules as worked examples of exactly that (bash and javascript, plus an
+output-string `*-output-caps-theater` variant); they are not installed by
+`install.sh`, so copy them in by hand if you want them.
 
 ## 4. Point the hook at your files
 

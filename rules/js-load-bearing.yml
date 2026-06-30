@@ -1,0 +1,18 @@
+# JavaScript sibling of comment-load-bearing — scans `//` and `/* */` comments
+# in javascript/mjs sources.
+id: js-load-bearing
+language: javascript
+severity: error
+message: >-
+  "load-bearing" terminology in a comment — forbidden in any spelling
+  (load-bearing, load bearing, loadbearing). It gestures at importance without
+  naming it. Pick a different word and state the actual consequence ("removing
+  this drops the retry guard, so a duplicate write returns success twice").
+note: >-
+  Ships at `error`, so a match blocks the commit — this tic is banned by
+  default, not merely hinted. Matches any separator and case, but exempts the
+  compound rule name (`js-load-bearing`, preceded by a hyphen) so references to
+  this rule do not self-trip. Run `ast-grep scan --rule rules/js-load-bearing.yml`.
+rule:
+  kind: comment
+  regex: '(?i)(^|[^\w-])load[\s_-]*bearing'

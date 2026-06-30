@@ -21,7 +21,7 @@ output:
 pre-commit:
   jobs:
     - name: prose
-      glob: "*.{ts,tsx,js,md}"
+      glob: "*.{ts,tsx,js,mjs,md,sh}"
       # Skip dot-directories (.github, .vendor, ...) — installed/vendored
       # content, not your authored prose.
       exclude:

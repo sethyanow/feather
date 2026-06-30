@@ -1,0 +1,18 @@
+# Shell sibling of comment-narrative-wall — scans `#` comments in bash sources.
+id: sh-narrative-wall
+language: bash
+severity: hint
+message: >-
+  Narrative-wall comment — a single physical comment line of 300+ chars. Dense
+  prose doing the job of structure: the key sentence drowns in supporting
+  context. Split into a short lead ("what + why") plus structured detail, or
+  move the long rationale to a doc the comment links.
+note: >-
+  Shell has no block-comment node: tree-sitter parses a `#`-block as N adjacent
+  single-line comments, not one multi-line node, so the 9+-wrapped-lines form
+  (which comment-/js-narrative-wall catch on `/* */`) cannot be detected
+  structurally here. This rule therefore catches only the unwrapped monster
+  line. A hint, not a fail. Run `ast-grep scan --rule rules/sh-narrative-wall.yml`.
+rule:
+  kind: comment
+  regex: '[^\n]{300,}'
